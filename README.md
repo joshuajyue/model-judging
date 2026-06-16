@@ -7,12 +7,20 @@ Prototype for a model judging and routing pipeline with:
 - **Lightweight scoring** for latency, cost, and quality
 - **Pairwise aggregation** for multi-judge panels
 - **GitHub Models integration** for real LLM judge calls
+- **Complexity detection** for request routing (SIMPLE/MEDIUM/COMPLEX/REASONING)
 
 ## Quick Start
 
 ```python
 from model_judging import Candidate, CodeExecutionJudge, JudgingPipeline, TaskKind
+from model_judging import extract_features, classify_tier
 
+# Complexity-based routing
+text = "Write a function that implements a class hierarchy with async/await"
+tier = classify_tier(score_complexity(extract_features(text)))
+# tier -> ComplexityTier.MEDIUM
+
+# Hard-truth judging
 judge = CodeExecutionJudge()
 pipeline = JudgingPipeline()
 
@@ -21,7 +29,6 @@ candidates = [
     Candidate(id="claude", name="Claude", quality_factor=0.92, latency_ms=1200, cost_per_1k_tokens=0.015),
 ]
 
-# Hard-truth judging
 decision = pipeline.judge(
     TaskKind.HARD_TRUTH,
     candidates,
@@ -41,11 +48,13 @@ decision = pipeline.judge(TaskKind.SUBJECTIVE, candidates)
 - `pairwise.py` — Vote aggregation for judge panels
 - `judges.py` — GitHub Models LLM judge
 - `executors.py` — Hard-truth evaluators (code, JSON schema)
+- `complexity.py` — Feature extraction and complexity tier classification
 
 ## Testing
 
 ```bash
 python -m unittest discover -s tests
+# 12 tests, 100% passing
 ```
 
 ## Examples
@@ -53,4 +62,5 @@ python -m unittest discover -s tests
 ```bash
 python examples.py
 ```
+
 
