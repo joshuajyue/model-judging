@@ -85,7 +85,8 @@ def cmd_run(args: argparse.Namespace) -> int:
             print(f"  {msg}")
 
     result = run_benchmark(
-        prompts, models, client, judge_models=judge_models, progress=progress
+        prompts, models, client, judge_models=judge_models,
+        matchup_rounds=args.matchup_rounds, progress=progress
     )
 
     out_dir = Path(args.out)
@@ -146,6 +147,9 @@ def main(argv: list[str] | None = None) -> int:
     run.add_argument("--limit", type=int, default=None, help="Cap number of prompts")
     run.add_argument("--models", default=None, help="Comma-separated id/tier filter")
     run.add_argument("--judge", default=None, help="Model id to use as the matchup judge")
+    run.add_argument("--matchup-rounds", type=int, default=None,
+                     help="Swiss rounds for subjective ranking (default: auto=ceil(log2 n); "
+                          "0 = exhaustive round-robin)")
     run.add_argument("--throttle", type=float, default=1.0,
                      help="Min seconds between Copilot CLI calls to avoid 429 (default: 1.0)")
     run.add_argument("--max-retries", type=int, default=6,

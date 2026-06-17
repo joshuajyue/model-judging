@@ -18,6 +18,12 @@ answers via blind pairwise matchups, then writes a CSV per model and per
 category. Because every model goes through the same surface, latency and cost
 are meaningful as a **relative** scale.
 
+Subjective ranking uses a **Swiss-system tournament** (≈`ceil(log2 n)` rounds)
+rather than exhaustive round-robin, so an 8-model panel needs ~12 matchups per
+prompt instead of 28 — far fewer Copilot calls (and far less rate-limit
+pressure). Small panels (≤4) still use exact round-robin. Pass
+`--matchup-rounds 0` to force full round-robin, or a specific round count.
+
 The default provider is the **GitHub Copilot CLI** (`copilot -p --model <id>`),
 which exposes the frontier preview models (`gpt-5.5`, `claude-opus-4.8`,
 `gemini-3.1-pro-preview`, …) that the public GitHub Models surface does not.

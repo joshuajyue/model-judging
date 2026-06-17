@@ -33,6 +33,17 @@ class _FakeJudge:
         return "tie"
 
 
+class _CountingJudge(_FakeJudge):
+    """Same verdicts as _FakeJudge but counts how many matchups were judged."""
+
+    def __init__(self):
+        self.calls = 0
+
+    def judge(self, prompt, rubric, answer_a, answer_b):
+        self.calls += 1
+        return super().judge(prompt, rubric, answer_a, answer_b)
+
+
 class CopilotCliParseTests(unittest.TestCase):
     """The CLI parser is pure/offline -- no `copilot` process is spawned."""
 
@@ -209,6 +220,25 @@ class MatchupRankingTests(unittest.TestCase):
         prompt = Prompt(id="e", category="email", kind="subjective", prompt="hi")
         ranks = rank_answers(prompt, {"only": "x"}, [_FakeJudge()])
         self.assertEqual(ranks, {"only": 1.0})
+
+    def test_swiss_used_for_large_panel_reduces_calls(self):
+        # 8 answers of strictly increasing length; "longer wins" is transitive.
+        prompt = Prompt(id="e", category="email", kind="subjective", prompt="hi")
+        answers = {f"m{i}": "x" * (i + 1) for i in range(8)}
+        judge = _CountingJudge()
+        ranks = rank_answers(prompt, answers, [judge], rng=random.Random(0))
+        # Swiss: ceil(log2 8)=3 rounds * 4 matches = 12 calls (vs 28 round-robin).
+        self.assertEqual(judge.calls, 12)
+        self.assertEqual(ranks["m7"], 1.0)        # longest is the unique winner
+        self.assertEqual(ranks["m0"], 8.0)        # shortest is the unique loser
+        self.assertLess(ranks["m7"], ranks["m0"])
+
+    def test_rounds_zero_forces_round_robin(self):
+        prompt = Prompt(id="e", category="email", kind="subjective", prompt="hi")
+        answers = {f"m{i}": "x" * (i + 1) for i in range(8)}
+        judge = _CountingJudge()
+        rank_answers(prompt, answers, [judge], rng=random.Random(0), rounds=0)
+        self.assertEqual(judge.calls, 28)         # C(8,2)
 
 
 class PercentileTests(unittest.TestCase):

@@ -99,6 +99,7 @@ def run_benchmark(
     judge_models: list[ModelSpec] | None = None,
     judges: list[PairwiseTextJudge] | None = None,
     rng: random.Random | None = None,
+    matchup_rounds: int | None = None,
     progress: ProgressFn | None = None,
 ) -> BenchmarkResult:
     rng = rng or random.Random(0)
@@ -156,7 +157,7 @@ def run_benchmark(
                 cell_index[(prompt.id, model_id)].rank = 1.0
             continue
         log(f"ranking {len(pool)} answers for {prompt.id}")
-        ranks = rank_answers(prompt, pool, judges, rng=rng)
+        ranks = rank_answers(prompt, pool, judges, rng=rng, rounds=matchup_rounds)
         worst = max(ranks.values()) + 1 if ranks else 1.0
         for model in models:
             cell = cell_index[(prompt.id, model.id)]
