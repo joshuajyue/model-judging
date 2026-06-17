@@ -13,6 +13,7 @@ from model_judging.assess import (
     grade_hard_truth,
     rank_answers,
 )
+from model_judging.copilot_client import CopilotCliClient
 from model_judging.dataset import Prompt, load_prompts
 from model_judging.harness import run_benchmark, _percentile, LatencyStats
 from model_judging.mock import MockModelClient
@@ -29,6 +30,51 @@ class _FakeJudge:
         if len(answer_b) > len(answer_a):
             return "B"
         return "tie"
+
+
+class CopilotCliParseTests(unittest.TestCase):
+    """The CLI parser is pure/offline -- no `copilot` process is spawned."""
+
+    _spec = default_models()[0]
+
+    def _parse(self, stdout, returncode=0, stderr=""):
+        return CopilotCliClient._parse(self._spec, stdout, stderr, returncode, wall_ms=1234.0)
+
+    def test_parses_answer_tokens_latency_cost(self):
+        stdout = "\n".join([
+            '{"type":"session.tools_updated","data":{}}',
+            '{"type":"assistant.message","data":{"model":"x","content":"43","outputTokens":76}}',
+            '{"type":"assistant.turn_end","data":{"turnId":"0"}}',
+            '{"type":"result","timestamp":"t","exitCode":0,'
+            '"usage":{"premiumRequests":2.5,"totalApiDurationMs":3826,"sessionDurationMs":8332}}',
+        ])
+        r = self._parse(stdout)
+        self.assertTrue(r.ok)
+        self.assertEqual(r.text, "43")
+        self.assertEqual(r.output_tokens, 76)
+        self.assertEqual(r.latency_ms, 3826.0)   # uses totalApiDurationMs, not wall_ms
+        self.assertEqual(r.cost_usd, 2.5)         # premiumRequests as relative cost
+
+    def test_keeps_last_nonempty_message_and_sums_tokens(self):
+        stdout = "\n".join([
+            '{"type":"assistant.message","data":{"content":"thinking...","outputTokens":10}}',
+            '{"type":"assistant.message","data":{"content":"final answer","outputTokens":20}}',
+            '{"type":"result","exitCode":0,"usage":{"premiumRequests":0,"totalApiDurationMs":100}}',
+        ])
+        r = self._parse(stdout)
+        self.assertEqual(r.text, "final answer")
+        self.assertEqual(r.output_tokens, 30)
+
+    def test_error_when_no_assistant_message(self):
+        stdout = '{"type":"result","exitCode":1,"usage":{}}'
+        r = self._parse(stdout, returncode=1, stderr="boom")
+        self.assertFalse(r.ok)
+        self.assertIn("boom", r.error)
+
+    def test_falls_back_to_wall_clock_without_api_duration(self):
+        stdout = '{"type":"assistant.message","data":{"content":"hi","outputTokens":1}}'
+        r = self._parse(stdout)
+        self.assertEqual(r.latency_ms, 1234.0)
 
 
 class DatasetTests(unittest.TestCase):
@@ -142,7 +188,7 @@ class EndToEndTests(unittest.TestCase):
         result = run_benchmark(prompts, models, MockModelClient(), rng=random.Random(0))
         ranks = {c.model_id: c.rank for c in result.cells if c.category == "email"
                  and c.prompt_id == prompts[0].id}
-        self.assertLess(ranks["anthropic/claude-opus-4.8"], ranks["anthropic/claude-haiku-4.5"])
+        self.assertLess(ranks["claude-opus-4.8"], ranks["claude-haiku-4.5"])
 
 
 if __name__ == "__main__":

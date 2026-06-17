@@ -5,6 +5,7 @@ from .assess import (
     rank_answers,
 )
 from .client import CompletionResult, GitHubModelsClient, ModelClient, fetch_catalog
+from .copilot_client import CopilotCliClient, CopilotCliError, verify_model
 from .complexity import ComplexityFeatures, ComplexityTier, classify_tier, extract_features, score_complexity
 from .dataset import Prompt, load_prompts
 from .executors import CodeExecutionJudge, JSONSchemaValidationJudge
@@ -36,6 +37,8 @@ __all__ = [
     "BenchmarkResult",
     "CellResult",
     "CompletionResult",
+    "CopilotCliClient",
+    "CopilotCliError",
     "GitHubModelsClient",
     "HardTruthResult",
     "LatencyStats",
@@ -51,6 +54,7 @@ __all__ = [
     "models_by_id",
     "rank_answers",
     "run_benchmark",
+    "verify_model",
     "write_detailed_csv",
     "write_summary_csv",
 ]

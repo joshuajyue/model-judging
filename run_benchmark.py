@@ -3,18 +3,22 @@
 
 Examples
 --------
-Offline dry-run (no token, no network) — exercises the whole pipeline:
+Offline dry-run (no auth, no network) -- exercises the whole pipeline:
 
     python run_benchmark.py run
 
-Live run against GitHub Models (needs a PAT with the 'models: read' scope):
+Live run against the **Copilot CLI** models (uses your existing `copilot` login):
 
-    python run_benchmark.py run --live --token ghp_xxx
-    GITHUB_TOKEN=ghp_xxx python run_benchmark.py run --live
+    python run_benchmark.py run --live
 
-Verify the registry model IDs against the live catalog before a paid run:
+Live run against GitHub Models instead (needs a PAT with the 'models: read' scope):
 
-    python run_benchmark.py verify-models --token ghp_xxx
+    python run_benchmark.py run --live --provider github --token ghp_xxx
+
+Verify the registry model IDs are accepted before a paid run:
+
+    python run_benchmark.py verify-models                 # pings each model via the CLI
+    python run_benchmark.py verify-models --provider github --token ghp_xxx
 """
 
 from __future__ import annotations
@@ -26,6 +30,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent / "src"))
 
 from model_judging.client import GitHubModelsClient, fetch_catalog
+from model_judging.copilot_client import CopilotCliClient, verify_model
 from model_judging.dataset import load_prompts
 from model_judging.harness import run_benchmark
 from model_judging.mock import MockModelClient
@@ -51,8 +56,12 @@ def cmd_run(args: argparse.Namespace) -> int:
         return 2
 
     if args.live:
-        client = GitHubModelsClient(token=args.token)
-        print(f"LIVE run: {len(models)} models x {len(prompts)} prompts via GitHub Models")
+        if args.provider == "github":
+            client = GitHubModelsClient(token=args.token)
+            print(f"LIVE run: {len(models)} models x {len(prompts)} prompts via GitHub Models")
+        else:
+            client = CopilotCliClient()
+            print(f"LIVE run: {len(models)} models x {len(prompts)} prompts via Copilot CLI")
     else:
         client = MockModelClient()
         print(f"DRY-RUN (offline mock): {len(models)} models x {len(prompts)} prompts")
@@ -87,18 +96,32 @@ def cmd_run(args: argparse.Namespace) -> int:
 
 
 def cmd_verify_models(args: argparse.Namespace) -> int:
-    try:
-        catalog = fetch_catalog(token=args.token)
-    except Exception as exc:  # noqa: BLE001
-        print(f"Catalog lookup failed: {exc}", file=sys.stderr)
-        return 1
-    catalog_ids = {str(m.get("id", "")).lower() for m in catalog}
-    print(f"Catalog returned {len(catalog_ids)} models.\n")
+    if args.provider == "github":
+        try:
+            catalog = fetch_catalog(token=args.token)
+        except Exception as exc:  # noqa: BLE001
+            print(f"Catalog lookup failed: {exc}", file=sys.stderr)
+            return 1
+        catalog_ids = {str(m.get("id", "")).lower() for m in catalog}
+        print(f"Catalog returned {len(catalog_ids)} models.\n")
+        missing = 0
+        for model in default_models():
+            ok = model.id.lower() in catalog_ids
+            mark = "OK " if ok else "MISSING"
+            missing += 0 if ok else 1
+            print(f"  [{mark}] {model.id}  ({model.tier})")
+        return 1 if missing else 0
+
+    # Copilot CLI provider: ping each model through the CLI.
+    print("Verifying registry ids against the Copilot CLI (one ping per model)...\n")
+    client = CopilotCliClient(timeout=120.0)
+    missing = 0
     for model in default_models():
-        ok = model.id.lower() in catalog_ids
+        ok, detail = verify_model(model, client=client)
         mark = "OK " if ok else "MISSING"
-        print(f"  [{mark}] {model.id}  ({model.tier})")
-    return 0
+        missing += 0 if ok else 1
+        print(f"  [{mark}] {model.id}  ({model.tier})  {detail}")
+    return 1 if missing else 0
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -106,8 +129,14 @@ def main(argv: list[str] | None = None) -> int:
     sub = parser.add_subparsers(dest="command", required=True)
 
     run = sub.add_parser("run", help="Run the benchmark and write CSVs")
-    run.add_argument("--live", action="store_true", help="Call GitHub Models for real")
-    run.add_argument("--token", default=None, help="GitHub PAT (else uses $GITHUB_TOKEN)")
+    run.add_argument("--live", action="store_true", help="Call real models (not the mock)")
+    run.add_argument(
+        "--provider",
+        choices=["copilot", "github"],
+        default="copilot",
+        help="Live backend: 'copilot' (Copilot CLI, default) or 'github' (GitHub Models)",
+    )
+    run.add_argument("--token", default=None, help="GitHub PAT for --provider github (else $GITHUB_TOKEN)")
     run.add_argument("--limit", type=int, default=None, help="Cap number of prompts")
     run.add_argument("--models", default=None, help="Comma-separated id/tier filter")
     run.add_argument("--judge", default=None, help="Model id to use as the matchup judge")
@@ -115,8 +144,14 @@ def main(argv: list[str] | None = None) -> int:
     run.add_argument("--verbose", action="store_true", help="Print per-call progress")
     run.set_defaults(func=cmd_run)
 
-    verify = sub.add_parser("verify-models", help="Check registry IDs against the live catalog")
-    verify.add_argument("--token", default=None, help="GitHub PAT (else uses $GITHUB_TOKEN)")
+    verify = sub.add_parser("verify-models", help="Check registry IDs are accepted by the provider")
+    verify.add_argument(
+        "--provider",
+        choices=["copilot", "github"],
+        default="copilot",
+        help="'copilot' pings each model via the CLI; 'github' checks the live catalog",
+    )
+    verify.add_argument("--token", default=None, help="GitHub PAT for --provider github (else $GITHUB_TOKEN)")
     verify.set_defaults(func=cmd_verify_models)
 
     args = parser.parse_args(argv)

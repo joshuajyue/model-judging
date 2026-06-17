@@ -8,40 +8,52 @@ Prototype for a model judging and routing pipeline with:
 - **Pairwise aggregation** for multi-judge panels
 - **GitHub Models integration** for real LLM judge calls
 - **Complexity detection** for request routing (SIMPLE/MEDIUM/COMPLEX/REASONING)
-- **Benchmark harness** that ranks real GitHub Models per prompt category
+- **Benchmark harness** that ranks the Copilot CLI models per prompt category
 
 ## Benchmark harness
 
-The harness calls a panel of GitHub Models on a shared prompt set, grades
-hard-truth answers objectively (run the code / check the number) and ranks
-subjective answers via blind pairwise matchups, then writes a CSV per model and
-per category. Because every model goes through the same GitHub Models surface,
-latency and cost are meaningful as a **relative** scale.
+The harness calls a panel of models on a shared prompt set, grades hard-truth
+answers objectively (run the code / check the number) and ranks subjective
+answers via blind pairwise matchups, then writes a CSV per model and per
+category. Because every model goes through the same surface, latency and cost
+are meaningful as a **relative** scale.
+
+The default provider is the **GitHub Copilot CLI** (`copilot -p --model <id>`),
+which exposes the frontier preview models (`gpt-5.5`, `claude-opus-4.8`,
+`gemini-3.1-pro-preview`, …) that the public GitHub Models surface does not.
+It reuses your existing `copilot` login — no PAT or token handling — and runs
+each prompt with tools disabled so it measures raw model quality. A
+`--provider github` path is still available for the GitHub Models API.
 
 ### Run it
 
 ```bash
-# Offline dry-run — no token, no network, deterministic mock answers:
+# Offline dry-run — no auth, no network, deterministic mock answers:
 python run_benchmark.py run
 
-# Live run against GitHub Models (needs a PAT with the 'models: read' scope):
-python run_benchmark.py run --live --token ghp_xxxxxxxx
-#   or set the token once in the environment:
-$env:GITHUB_TOKEN="ghp_xxxxxxxx"   # PowerShell
+# Live run against the Copilot CLI models (uses your existing `copilot` login):
 python run_benchmark.py run --live
 
-# Confirm the registry model IDs match the live catalog before a paid run:
-python run_benchmark.py verify-models --token ghp_xxxxxxxx
+# Live run against GitHub Models instead (needs a PAT with the 'models: read' scope):
+python run_benchmark.py run --live --provider github --token ghp_xxxxxxxx
+
+# Confirm every registry model id is accepted before a paid run:
+python run_benchmark.py verify-models                       # pings each model via the CLI
+python run_benchmark.py verify-models --provider github --token ghp_xxxxxxxx
 ```
 
 Useful flags: `--limit N` (cap prompts), `--models claude,openai-low` (filter by
 id/tier), `--judge <model-id>` (matchup judge), `--out DIR`, `--verbose`.
 
-### Where the PAT goes
+### Auth
 
-Pass `--token ghp_...` or set the `GITHUB_TOKEN` environment variable. The token
-needs the **`models: read`** scope. Create one at
-<https://github.com/settings/tokens>.
+- **Copilot CLI provider (default):** just run `copilot` once and sign in
+  (`/login`). The harness shells out to the installed `copilot` executable; set
+  `COPILOT_BIN` if it is not on `PATH`. Latency comes from the CLI's reported
+  `totalApiDurationMs` and the cost column is the Copilot `premiumRequests`
+  billed per call (the relative cost metric).
+- **GitHub Models provider:** pass `--token ghp_...` or set `GITHUB_TOKEN`. The
+  token needs the **`models: read`** scope (<https://github.com/settings/tokens>).
 
 ### Outputs (`results/`)
 
@@ -55,7 +67,7 @@ needs the **`models: read`** scope. Create one at
 ### Editing the model set and prices
 
 `src/model_judging/registry.py` lists the eight benchmarked models with tier
-labels and editable per-token prices. Prompts live in
+labels (ids are Copilot CLI model ids). Prompts live in
 `src/model_judging/data/prompts.json` — add more (10+ per category) to firm up
 the rankings.
 
@@ -99,8 +111,9 @@ decision = pipeline.judge(TaskKind.SUBJECTIVE, candidates)
 - `judges.py` — GitHub Models LLM judge
 - `executors.py` — Hard-truth evaluators (code, JSON schema)
 - `complexity.py` — Feature extraction and complexity tier classification
-- `registry.py` — Benchmarked GitHub Models, tiers, and prices
+- `registry.py` — Benchmarked models (Copilot CLI ids), tiers, and prices
 - `client.py` — GitHub Models inference client (answers prompts; captures latency/tokens/cost)
+- `copilot_client.py` — Copilot CLI client (default; shells out to `copilot -p`, captures latency/tokens/premium-requests)
 - `dataset.py` — Prompt dataset loader and answer-format directives
 - `assess.py` — Hard-truth grading and subjective matchup ranking
 - `harness.py` — Benchmark orchestrator
