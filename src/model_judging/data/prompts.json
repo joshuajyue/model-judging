@@ -1,0 +1,108 @@
+{
+  "prompts": [
+    {
+      "id": "easy_code_01",
+      "category": "easy_coding",
+      "kind": "hard_truth",
+      "prompt": "can u rite a python funtion solve(n) that retuns the sum of all even numbrs from 1 to n inclusive",
+      "answer_format": "code",
+      "evaluation": {
+        "type": "code_exec",
+        "language": "python",
+        "harness": "print(solve(10))",
+        "expected_output": "30"
+      }
+    },
+    {
+      "id": "easy_code_02",
+      "category": "easy_coding",
+      "kind": "hard_truth",
+      "prompt": "write a function solve(s) that revereses a string and makes the whole thing uppercase plz",
+      "answer_format": "code",
+      "evaluation": {
+        "type": "code_exec",
+        "language": "python",
+        "harness": "print(solve('hello'))",
+        "expected_output": "OLLEH"
+      }
+    },
+    {
+      "id": "hard_code_01",
+      "category": "hard_coding",
+      "kind": "hard_truth",
+      "prompt": "i need a function solve(nums) that returns the length of the longest strictly increasing subsequence in a list of ints. e.g [10,9,2,5,3,7,101,18] shud give 4",
+      "answer_format": "code",
+      "evaluation": {
+        "type": "code_exec",
+        "language": "python",
+        "harness": "print(solve([10,9,2,5,3,7,101,18]))",
+        "expected_output": "4"
+      }
+    },
+    {
+      "id": "hard_code_02",
+      "category": "hard_coding",
+      "kind": "hard_truth",
+      "prompt": "write solve(s) that returns True if the parantheses in the string are balanced (handles ()[]{}) else False. so '([]{})' is true and '([)]' is false",
+      "answer_format": "code",
+      "evaluation": {
+        "type": "code_exec",
+        "language": "python",
+        "harness": "print(solve('([]{})'), solve('([)]'))",
+        "expected_output": "True False"
+      }
+    },
+    {
+      "id": "calc_01",
+      "category": "calculus",
+      "kind": "hard_truth",
+      "prompt": "whats the derivative of x^3 evaluated at x=2? i just need the numbr",
+      "answer_format": "final_line",
+      "evaluation": {
+        "type": "numeric",
+        "expected": 12,
+        "tolerance": 0.001
+      }
+    },
+    {
+      "id": "calc_02",
+      "category": "calculus",
+      "kind": "hard_truth",
+      "prompt": "the integral of 2x from 0 to 3, what is it equal to",
+      "answer_format": "final_line",
+      "evaluation": {
+        "type": "numeric",
+        "expected": 9,
+        "tolerance": 0.001
+      }
+    },
+    {
+      "id": "email_01",
+      "category": "email",
+      "kind": "subjective",
+      "prompt": "help me rite an email to my professer askin for an extension on my essay cuz i was sick this week, its due tmrw and i dont wanna fail",
+      "rubric": "Professional but warm tone, clearly states the reason, makes a specific ask with a proposed new date, concise, no grammar errors."
+    },
+    {
+      "id": "email_02",
+      "category": "email",
+      "kind": "subjective",
+      "prompt": "write a short email to my landlord that the heating has been broken for 3 days now and i want it fixd asap but keep it profesional",
+      "rubric": "Polite but firm, states the issue and duration, requests timely repair, professional tone, concise."
+    },
+    {
+      "id": "advice_01",
+      "category": "advice",
+      "kind": "subjective",
+      "prompt": "i got two job offers, one pays more but has way longer hours, the other is more chill but less money. what should i be thinkin about here",
+      "rubric": "Balanced, surfaces concrete trade-offs (finances, growth, burnout, life stage), asks clarifying considerations, actionable, not preachy."
+    },
+    {
+      "id": "essay_01",
+      "category": "essay",
+      "kind": "subjective",
+      "prompt": "write a short paragraph arguing why public libraries are still importent in the digital age",
+      "rubric": "Clear thesis, 2-3 concrete supporting points, persuasive, well-structured, no grammar errors."
+    }
+  ]
+}

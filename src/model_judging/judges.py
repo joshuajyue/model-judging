@@ -38,6 +38,8 @@ Which is better? Respond with ONLY: "LEFT" or "RIGHT" or "TIE". No explanation."
         headers = {
             "Authorization": f"Bearer {api_key}",
             "Content-Type": "application/json",
+            "Accept": "application/vnd.github+json",
+            "X-GitHub-Api-Version": "2026-03-10",
         }
 
         body = json_module.dumps(
@@ -52,7 +54,7 @@ Which is better? Respond with ONLY: "LEFT" or "RIGHT" or "TIE". No explanation."
 
         try:
             request = urllib.request.Request(
-                "https://api.github.com/models/chat/completions",
+                "https://models.github.ai/inference/chat/completions",
                 data=body,
                 headers=headers,
             )
