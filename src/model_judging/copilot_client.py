@@ -29,13 +29,38 @@ from __future__ import annotations
 
 import json
 import os
+import random
 import subprocess
+import sys
 import time
 
 from .client import CompletionResult
 from .registry import ModelSpec
 
 COPILOT_BIN = os.environ.get("COPILOT_BIN", "copilot")
+
+# Substrings that mark a GitHub/Copilot rate-limit response. The CLI surfaces the
+# raw 429 body, which includes GitHub's "Too many requests"/ToS scraping notice;
+# Gemini-style backends report "RESOURCE_EXHAUSTED".
+_RATE_LIMIT_MARKERS = (
+    "429",
+    "too many requests",
+    "rate limit",
+    "rate-limit",
+    "secondary rate",
+    "resource_exhausted",
+    "quota exceeded",
+)
+
+
+def _looks_rate_limited(*texts: str | None) -> bool:
+    for text in texts:
+        if not text:
+            continue
+        low = text.lower()
+        if any(marker in low for marker in _RATE_LIMIT_MARKERS):
+            return True
+    return False
 
 
 class CopilotCliError(RuntimeError):
@@ -44,6 +69,16 @@ class CopilotCliError(RuntimeError):
 
 class CopilotCliClient:
     """Drives completions through ``copilot -p`` (implements the ``ModelClient`` Protocol).
+
+    A full benchmark spawns a fresh ``copilot`` process per (model, prompt) *and*
+    per matchup judge call -- easily ~200 invocations -- which trips GitHub's
+    secondary rate limit (HTTP 429). To stay under it this client:
+
+    * **throttles** to at most one spawn every ``min_interval`` seconds (the same
+      instance is shared by answer and judge calls, so the cap covers the whole
+      run), and
+    * **retries with exponential backoff** when a 429 / rate-limit response is
+      detected, since those limits are time-windowed and clear on their own.
 
     Parameters
     ----------
@@ -58,6 +93,13 @@ class CopilotCliClient:
     disable_builtin_mcps:
         Pass ``--disable-builtin-mcps`` to cut session startup time. This only
         affects wall-clock time, never the reported ``totalApiDurationMs``.
+    min_interval:
+        Minimum seconds between process spawns (gentle proactive throttle).
+    max_retries:
+        How many times to retry a single call after a rate-limit response.
+    backoff_base / backoff_cap:
+        Exponential backoff is ``min(backoff_cap, backoff_base * 2**attempt)``
+        seconds plus jitter, per retry.
     extra_args:
         Additional raw CLI arguments appended to every invocation.
     """
@@ -69,13 +111,34 @@ class CopilotCliClient:
         timeout: float = 300.0,
         cwd: str | None = None,
         disable_builtin_mcps: bool = True,
+        min_interval: float = 1.0,
+        max_retries: int = 6,
+        backoff_base: float = 10.0,
+        backoff_cap: float = 120.0,
         extra_args: list[str] | None = None,
     ) -> None:
         self.copilot_bin = copilot_bin
         self.timeout = timeout
         self.cwd = cwd if cwd is not None else os.environ.get("TEMP") or os.getcwd()
         self.disable_builtin_mcps = disable_builtin_mcps
+        self.min_interval = max(0.0, min_interval)
+        self.max_retries = max(0, max_retries)
+        self.backoff_base = backoff_base
+        self.backoff_cap = backoff_cap
         self.extra_args = list(extra_args or [])
+        self._last_spawn_at = 0.0
+        self._rng = random.Random()
+
+    def _throttle(self) -> None:
+        if self.min_interval <= 0:
+            return
+        wait = self.min_interval - (time.monotonic() - self._last_spawn_at)
+        if wait > 0:
+            time.sleep(wait)
+
+    def _backoff_seconds(self, attempt: int) -> float:
+        base = min(self.backoff_cap, self.backoff_base * (2 ** attempt))
+        return base + self._rng.uniform(0, base * 0.25)
 
     def _build_args(self, model: ModelSpec, prompt: str) -> list[str]:
         args = [
@@ -103,11 +166,33 @@ class CopilotCliClient:
     ) -> CompletionResult:
         # The CLI has no separate system-prompt flag, so fold any system text in.
         full_prompt = f"{system}\n\n{prompt}" if system else prompt
+
+        result = self._run_once(model, full_prompt)
+        attempt = 0
+        while (
+            attempt < self.max_retries
+            and not result.ok
+            and _looks_rate_limited(result.error)
+        ):
+            delay = self._backoff_seconds(attempt)
+            print(
+                f"[copilot] rate limited on {model.id}; backing off "
+                f"{delay:.0f}s (retry {attempt + 1}/{self.max_retries})",
+                file=sys.stderr,
+                flush=True,
+            )
+            time.sleep(delay)
+            attempt += 1
+            result = self._run_once(model, full_prompt)
+        return result
+
+    def _run_once(self, model: ModelSpec, full_prompt: str) -> CompletionResult:
         args = self._build_args(model, full_prompt)
 
         env = dict(os.environ)
         env.setdefault("COPILOT_DISABLE_UPDATE", "1")
 
+        self._throttle()
         started = time.perf_counter()
         try:
             proc = subprocess.run(
@@ -126,6 +211,7 @@ class CopilotCliClient:
                 f"installed and on PATH? Original error: {exc}"
             ) from exc
         except subprocess.TimeoutExpired:
+            self._last_spawn_at = time.monotonic()
             latency_ms = (time.perf_counter() - started) * 1000.0
             return CompletionResult(
                 model_id=model.id,
@@ -137,6 +223,7 @@ class CopilotCliClient:
                 error=f"timeout after {self.timeout:.0f}s",
             )
 
+        self._last_spawn_at = time.monotonic()
         wall_ms = (time.perf_counter() - started) * 1000.0
         return self._parse(model, proc.stdout, proc.stderr, proc.returncode, wall_ms)
 

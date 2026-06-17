@@ -13,6 +13,7 @@ from model_judging.assess import (
     grade_hard_truth,
     rank_answers,
 )
+from model_judging.client import CompletionResult
 from model_judging.copilot_client import CopilotCliClient
 from model_judging.dataset import Prompt, load_prompts
 from model_judging.harness import run_benchmark, _percentile, LatencyStats
@@ -75,6 +76,71 @@ class CopilotCliParseTests(unittest.TestCase):
         stdout = '{"type":"assistant.message","data":{"content":"hi","outputTokens":1}}'
         r = self._parse(stdout)
         self.assertEqual(r.latency_ms, 1234.0)
+
+
+class CopilotCliRetryTests(unittest.TestCase):
+    def test_rate_limit_marker_detection(self):
+        from model_judging.copilot_client import _looks_rate_limited
+        self.assertTrue(_looks_rate_limited("HTTP 429: Too many requests"))
+        self.assertTrue(_looks_rate_limited(None, "secondary rate limit hit"))
+        self.assertTrue(_looks_rate_limited("RESOURCE_EXHAUSTED"))
+        self.assertFalse(_looks_rate_limited("HTTP 500: server error"))
+        self.assertFalse(_looks_rate_limited(None, ""))
+
+    def test_retries_on_rate_limit_then_succeeds(self):
+        spec = default_models()[0]
+        client = CopilotCliClient(min_interval=0.0, max_retries=3,
+                                  backoff_base=0.0, backoff_cap=0.0)
+        calls = {"n": 0}
+
+        def fake_run_once(model, full_prompt):
+            calls["n"] += 1
+            if calls["n"] < 3:
+                return CompletionResult(model_id=model.id, text="", latency_ms=1.0,
+                                        input_tokens=0, output_tokens=0, cost_usd=0.0,
+                                        error="HTTP 429: Too many requests")
+            return CompletionResult(model_id=model.id, text="done", latency_ms=1.0,
+                                    input_tokens=0, output_tokens=5, cost_usd=0.0)
+
+        client._run_once = fake_run_once
+        result = client.complete(spec, "hi")
+        self.assertTrue(result.ok)
+        self.assertEqual(result.text, "done")
+        self.assertEqual(calls["n"], 3)
+
+    def test_gives_up_after_max_retries(self):
+        spec = default_models()[0]
+        client = CopilotCliClient(min_interval=0.0, max_retries=2,
+                                  backoff_base=0.0, backoff_cap=0.0)
+        calls = {"n": 0}
+
+        def always_limited(model, full_prompt):
+            calls["n"] += 1
+            return CompletionResult(model_id=model.id, text="", latency_ms=1.0,
+                                    input_tokens=0, output_tokens=0, cost_usd=0.0,
+                                    error="429 too many requests")
+
+        client._run_once = always_limited
+        result = client.complete(spec, "hi")
+        self.assertFalse(result.ok)
+        self.assertEqual(calls["n"], 3)  # 1 initial + 2 retries
+
+    def test_non_rate_limit_error_not_retried(self):
+        spec = default_models()[0]
+        client = CopilotCliClient(min_interval=0.0, max_retries=5,
+                                  backoff_base=0.0, backoff_cap=0.0)
+        calls = {"n": 0}
+
+        def server_error(model, full_prompt):
+            calls["n"] += 1
+            return CompletionResult(model_id=model.id, text="", latency_ms=1.0,
+                                    input_tokens=0, output_tokens=0, cost_usd=0.0,
+                                    error="HTTP 500: boom")
+
+        client._run_once = server_error
+        result = client.complete(spec, "hi")
+        self.assertFalse(result.ok)
+        self.assertEqual(calls["n"], 1)  # not retried
 
 
 class DatasetTests(unittest.TestCase):

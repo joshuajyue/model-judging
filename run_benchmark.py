@@ -60,8 +60,14 @@ def cmd_run(args: argparse.Namespace) -> int:
             client = GitHubModelsClient(token=args.token)
             print(f"LIVE run: {len(models)} models x {len(prompts)} prompts via GitHub Models")
         else:
-            client = CopilotCliClient()
-            print(f"LIVE run: {len(models)} models x {len(prompts)} prompts via Copilot CLI")
+            client = CopilotCliClient(
+                min_interval=args.throttle,
+                max_retries=args.max_retries,
+            )
+            print(
+                f"LIVE run: {len(models)} models x {len(prompts)} prompts via Copilot CLI "
+                f"(throttle={args.throttle:g}s, max_retries={args.max_retries})"
+            )
     else:
         client = MockModelClient()
         print(f"DRY-RUN (offline mock): {len(models)} models x {len(prompts)} prompts")
@@ -140,6 +146,10 @@ def main(argv: list[str] | None = None) -> int:
     run.add_argument("--limit", type=int, default=None, help="Cap number of prompts")
     run.add_argument("--models", default=None, help="Comma-separated id/tier filter")
     run.add_argument("--judge", default=None, help="Model id to use as the matchup judge")
+    run.add_argument("--throttle", type=float, default=1.0,
+                     help="Min seconds between Copilot CLI calls to avoid 429 (default: 1.0)")
+    run.add_argument("--max-retries", type=int, default=6,
+                     help="Retries with exponential backoff on a 429 (default: 6)")
     run.add_argument("--out", default="results", help="Output directory (default: results)")
     run.add_argument("--verbose", action="store_true", help="Print per-call progress")
     run.set_defaults(func=cmd_run)
