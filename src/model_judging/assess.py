@@ -116,6 +116,67 @@ def grade_hard_truth(prompt: Prompt, answer_text: str) -> HardTruthResult:
 
 
 # --------------------------------------------------------------------------- #
+# Semantic-truth validity judging (math / logic proofs)
+# --------------------------------------------------------------------------- #
+
+
+class ValidityJudge(Protocol):
+    def assess(self, prompt: str, rubric: str | None, answer: str) -> str:
+        """Return 'valid', 'invalid', or 'unsure' for a candidate proof."""
+        ...
+
+
+_VALIDITY = re.compile(r"\b(VALID|INVALID)\b", re.IGNORECASE)
+
+
+class ModelValidityJudge:
+    """A model-backed judge that rules a single proof valid or invalid."""
+
+    def __init__(self, client: ModelClient, judge_model: ModelSpec):
+        self.client = client
+        self.judge_model = judge_model
+
+    def assess(self, prompt: str, rubric: str | None, answer: str) -> str:
+        rubric_line = (
+            f"\nWhat a correct answer must establish: {rubric}\n" if rubric else "\n"
+        )
+        instruction = (
+            "You are a rigorous mathematician and logician. Decide whether the "
+            "candidate proof below is logically VALID and actually proves the stated "
+            "claim. A proof with a gap, hand-waving over a key step, an unjustified "
+            "assertion, a circular argument, or a wrong conclusion is INVALID."
+            f"{rubric_line}"
+            f"\n[Statement to prove]\n{prompt}\n"
+            f"\n[Candidate proof]\n{answer}\n"
+            "\nReply with exactly one token: VALID or INVALID."
+        )
+        result = self.client.complete(self.judge_model, instruction)
+        if not result.ok:
+            return "unsure"
+        match = _VALIDITY.search(result.text.strip().upper())
+        if not match:
+            return "unsure"
+        return match.group(1).lower()
+
+
+def grade_semantic_truth(
+    prompt: Prompt, answer: str, judges: list[ValidityJudge]
+) -> HardTruthResult:
+    """Grade a proof by majority vote of a validity-judge panel.
+
+    Each judge rules ``valid`` / ``invalid`` / ``unsure``; the proof is correct
+    only with a strict majority of ``valid`` votes over the whole panel (so a tie
+    or an abstention counts against it -- a proof should convince a majority).
+    """
+    verdicts = [j.assess(prompt.prompt, prompt.rubric, answer) for j in judges]
+    total = len(verdicts)
+    valid = sum(1 for v in verdicts if v == "valid")
+    correct = valid * 2 > total  # strict majority of the full panel
+    detail = f"valid {valid}/{total} [" + ", ".join(verdicts) + "]"
+    return HardTruthResult(correct, detail)
+
+
+# --------------------------------------------------------------------------- #
 # Subjective matchup ranking
 # --------------------------------------------------------------------------- #
 

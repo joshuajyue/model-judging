@@ -64,15 +64,17 @@ def default_models() -> list[ModelSpec]:
     return list(DEFAULT_MODELS)
 
 
-# Default matchup-judge panel: the cheapest model from each vendor. Using one
-# cheap judge per vendor keeps judging cost negligible *and* balances per-vendor
-# self-preference bias (a Claude judge mildly favours Claude answers, etc.), so
-# the aggregated verdict is more neutral than any single judge -- including an
-# expensive one. Override with run_benchmark's --judge.
+# Default matchup-judge panel: the cheapest-to-run model from each vendor *by
+# Copilot premium-request cost*. Note this is NOT always the lowest tier -- on the
+# Copilot CLI, Gemini 3.5 Flash bills at ~14x premium while Gemini 3.1 Pro bills at
+# ~1x, so Pro is the cheaper Google judge. One judge per vendor keeps cost low AND
+# balances per-vendor self-preference bias, so the aggregated verdict is more
+# neutral than any single judge -- including an expensive one. Override with
+# run_benchmark's --judge.
 DEFAULT_JUDGE_IDS: tuple[str, ...] = (
     "claude-haiku-4.5",
     "gpt-5.4-mini",
-    "gemini-3.5-flash",
+    "gemini-3.1-pro-preview",
 )
 
 

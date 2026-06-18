@@ -39,6 +39,9 @@ _SUBJECTIVE = (
     "response that addresses your request directly and professionally. {filler}\n\nBest regards"
 )
 
+# Substrings identifying the seeded semantic-truth (proof) prompts.
+_SEMANTIC_NEEDLES = ("random walk", "implies", "prove", "proof")
+
 
 def _hash_jitter(seed: str, lo: int, hi: int) -> int:
     digest = hashlib.sha256(seed.encode("utf-8")).hexdigest()
@@ -49,6 +52,8 @@ class MockModelClient:
     """Implements the ``ModelClient`` protocol without any network access."""
 
     def complete(self, model: ModelSpec, prompt: str, system: str | None = None) -> CompletionResult:
+        if "[Statement to prove]" in prompt and "VALID or INVALID" in prompt:
+            return self._validity(model, prompt)
         if "[Answer A]" in prompt and "[Answer B]" in prompt:
             return self._judge(model, prompt)
         return self._answer(model, prompt)
@@ -63,6 +68,20 @@ class MockModelClient:
                 else:
                     text = answer
                 break
+        if text is None and any(n in prompt.lower() for n in _SEMANTIC_NEEDLES):
+            # Proof prompt: low-tier models leave a gap ("incomplete") so the
+            # validity panel rules them invalid; higher tiers give a sound proof.
+            if low_tier:
+                text = (
+                    "Sketch: by rough analogy the result should hold, but this key "
+                    "step is incomplete and hand-wavy, so the argument has a gap."
+                )
+            else:
+                text = (
+                    "Proof. We establish the claim rigorously by bounding the relevant "
+                    "quantity and showing the required series converges. Therefore the "
+                    "claim holds. QED."
+                )
         if text is None:
             # Subjective prompt: vary length by tier so matchups differentiate.
             filler = "Detailed, specific, and considerate. " * (
@@ -91,6 +110,19 @@ class MockModelClient:
         return CompletionResult(
             model_id=model.id,
             text=verdict,
+            latency_ms=float(_hash_jitter(prompt, 300, 700)),
+            input_tokens=len(prompt) // 4,
+            output_tokens=1,
+            cost_usd=0.0,
+        )
+
+    def _validity(self, model: ModelSpec, prompt: str) -> CompletionResult:
+        proof = prompt.split("[Candidate proof]", 1)[1].split("Reply with", 1)[0]
+        # A proof that admits a gap ("incomplete"/"hand-wavy") is ruled invalid.
+        invalid = any(w in proof.lower() for w in ("incomplete", "hand-wavy", "gap"))
+        return CompletionResult(
+            model_id=model.id,
+            text="INVALID" if invalid else "VALID",
             latency_ms=float(_hash_jitter(prompt, 300, 700)),
             input_tokens=len(prompt) // 4,
             output_tokens=1,

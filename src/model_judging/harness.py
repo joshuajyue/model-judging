@@ -19,8 +19,11 @@ from typing import Callable
 
 from .assess import (
     ModelMatchupJudge,
+    ModelValidityJudge,
     PairwiseTextJudge,
+    ValidityJudge,
     grade_hard_truth,
+    grade_semantic_truth,
     rank_answers,
 )
 from .client import CompletionResult, ModelClient
@@ -136,6 +139,7 @@ def run_benchmark(
     *,
     judge_models: list[ModelSpec] | None = None,
     judges: list[PairwiseTextJudge] | None = None,
+    validity_judges: list[ValidityJudge] | None = None,
     rng: random.Random | None = None,
     matchup_rounds: int | None = None,
     concurrency: int = 1,
@@ -160,17 +164,21 @@ def run_benchmark(
         with log_lock:
             raw_log(msg)
 
-    if judges is None:
-        # Default to the vendor-balanced cheap judge panel; fall back to the
-        # first contestant only if the registry panel is somehow empty.
+    if judges is None or validity_judges is None:
+        # The same vendor-balanced cheap panel does double duty: pairwise judging
+        # for subjective prompts and validity judging for semantic-truth proofs.
         if judge_models is not None:
             panel = judge_models
         else:
             panel = default_judge_models() or models[:1]
-        judges = [ModelMatchupJudge(client, jm) for jm in panel]
+        if judges is None:
+            judges = [ModelMatchupJudge(client, jm) for jm in panel]
+        if validity_judges is None:
+            validity_judges = [ModelValidityJudge(client, jm) for jm in panel]
 
     result = BenchmarkResult()
     answers: dict[str, dict[str, str]] = {p.id: {} for p in prompts}
+    semantic_answers: dict[str, dict[str, str]] = {p.id: {} for p in prompts}
     cell_index: dict[tuple[str, str], CellResult] = {}
     concurrency = max(1, concurrency)
 
@@ -196,8 +204,41 @@ def run_benchmark(
         cell_index[(prompt.id, model.id)] = cell
         if prompt.is_hard_truth:
             _apply_hard_truth(cell, prompt, completion)
+        elif prompt.is_semantic_truth:
+            if completion.ok and completion.text:
+                semantic_answers[prompt.id][model.id] = completion.text
+            else:
+                cell.correct = False
+                cell.detail = completion.error or "no response"
         elif completion.ok and completion.text:
             answers[prompt.id][model.id] = completion.text
+
+    # ----------------------------------------------------------------- #
+    # Phase 1.5: grade semantic-truth proofs via the validity panel
+    # (per answer, majority rules). Parallelised across (prompt, model).
+    # ----------------------------------------------------------------- #
+    semantic_tasks = [
+        (prompt, model_id, text)
+        for prompt in prompts
+        if prompt.is_semantic_truth
+        for model_id, text in semantic_answers[prompt.id].items()
+    ]
+
+    def semantic_task(item: tuple[Prompt, str, str]):
+        prompt, model_id, text = item
+        log(f"validity-judging {model_id} on {prompt.id}")
+        return (prompt.id, model_id), grade_semantic_truth(prompt, text, validity_judges)
+
+    if concurrency > 1 and semantic_tasks:
+        with ThreadPoolExecutor(max_workers=concurrency) as pool:
+            graded = list(pool.map(semantic_task, semantic_tasks))
+    else:
+        graded = [semantic_task(t) for t in semantic_tasks]
+
+    for (prompt_id, model_id), res in graded:
+        cell = cell_index[(prompt_id, model_id)]
+        cell.correct = res.correct
+        cell.detail = res.detail
 
     # ----------------------------------------------------------------- #
     # Phase 2: rank subjective answers via pairwise matchups.

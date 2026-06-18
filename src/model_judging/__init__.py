@@ -1,7 +1,9 @@
 from .assess import (
     HardTruthResult,
     ModelMatchupJudge,
+    ModelValidityJudge,
     grade_hard_truth,
+    grade_semantic_truth,
     rank_answers,
 )
 from .client import CompletionResult, GitHubModelsClient, ModelClient, fetch_catalog
@@ -44,6 +46,7 @@ __all__ = [
     "LatencyStats",
     "ModelClient",
     "ModelMatchupJudge",
+    "ModelValidityJudge",
     "ModelSpec",
     "MockModelClient",
     "Prompt",
@@ -51,6 +54,7 @@ __all__ = [
     "default_models",
     "fetch_catalog",
     "grade_hard_truth",
+    "grade_semantic_truth",
     "load_prompts",
     "models_by_id",
     "rank_answers",

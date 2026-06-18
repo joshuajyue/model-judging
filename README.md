@@ -25,11 +25,13 @@ pressure). Small panels (≤4) still use exact round-robin. Pass
 `--matchup-rounds 0` to force full round-robin, or a specific round count.
 
 Each matchup is judged by a **cheap, vendor-balanced judge panel** —
-`claude-haiku-4.5`, `gpt-5.4-mini`, `gemini-3.5-flash` — and the verdicts are
-aggregated. One low-tier model per vendor keeps judging cost negligible while
+`claude-haiku-4.5`, `gpt-5.4-mini`, `gemini-3.1-pro-preview` — and the verdicts
+are aggregated. One cheap-to-run model per vendor keeps judging cost low while
 balancing per-vendor self-preference bias, so the aggregate verdict is more
-neutral than any single judge (including an expensive one). Override with
-`--judge id1,id2,...` (e.g. `--judge gpt-5.4-mini` for a single cheap judge).
+neutral than any single judge (including an expensive one). The Google seat uses
+Gemini 3.1 Pro rather than Flash because **Flash bills ~14× premium on Copilot**
+while Pro bills ~1×. Override with `--judge id1,id2,...`
+(e.g. `--judge gpt-5.4-mini` for a single cheap judge).
 
 The default provider is the **GitHub Copilot CLI** (`copilot -p --model <id>`),
 which exposes the frontier preview models (`gpt-5.5`, `claude-opus-4.8`,

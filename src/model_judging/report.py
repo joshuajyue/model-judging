@@ -21,9 +21,10 @@ from .harness import BenchmarkResult, CellResult, LatencyStats
 def _score_cell(cell: CellResult) -> str:
     if cell.error:
         return "error"
-    if cell.kind == "hard_truth":
-        return "correct" if cell.correct else "incorrect"
-    return "" if cell.rank is None else f"{cell.rank:g}"
+    if cell.kind == "subjective":
+        return "" if cell.rank is None else f"{cell.rank:g}"
+    # hard_truth and semantic_truth are both binary correct/incorrect.
+    return "correct" if cell.correct else "incorrect"
 
 
 def write_detailed_csv(result: BenchmarkResult, path: str | Path) -> Path:
@@ -83,17 +84,18 @@ def write_summary_csv(result: BenchmarkResult, path: str | Path) -> Path:
         avg_premium = statistics.fmean(premiums) if premiums else 0.0
         avg_cost = statistics.fmean(costs) if costs else 0.0
 
-        if kind == "hard_truth":
+        if kind == "subjective":
+            ranked = [c.rank for c in cells if c.rank is not None]
+            value = statistics.fmean(ranked) if ranked else 0.0
+            metric = "avg_rank"
+        else:
+            # hard_truth and semantic_truth are both pass/fail.
             graded = [c for c in cells if c.correct is not None]
             value = (
                 statistics.fmean([1.0 if c.correct else 0.0 for c in graded])
                 if graded else 0.0
             )
             metric = "pass_rate"
-        else:
-            ranked = [c.rank for c in cells if c.rank is not None]
-            value = statistics.fmean(ranked) if ranked else 0.0
-            metric = "avg_rank"
 
         rows.append(
             {

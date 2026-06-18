@@ -32,7 +32,7 @@ ANSWER_FORMAT_DIRECTIVES: dict[str, str] = {
 class Prompt:
     id: str
     category: str
-    kind: str  # "hard_truth" | "subjective"
+    kind: str  # "hard_truth" | "subjective" | "semantic_truth"
     prompt: str
     answer_format: str | None = None
     evaluation: dict = field(default_factory=dict)
@@ -45,6 +45,11 @@ class Prompt:
     @property
     def is_subjective(self) -> bool:
         return self.kind == "subjective"
+
+    @property
+    def is_semantic_truth(self) -> bool:
+        """Proof-style prompts graded valid/invalid by a judge panel (majority rules)."""
+        return self.kind == "semantic_truth"
 
     def rendered_prompt(self) -> str:
         """The prompt actually sent to the model, incl. any format directive."""

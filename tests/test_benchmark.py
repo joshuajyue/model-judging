@@ -11,6 +11,7 @@ from model_judging.assess import (
     extract_numeric_answer,
     extract_python_code,
     grade_hard_truth,
+    grade_semantic_truth,
     rank_answers,
 )
 from model_judging.client import CompletionResult
@@ -91,6 +92,66 @@ class CopilotCliParseTests(unittest.TestCase):
         self.assertEqual(r.latency_ms, 1234.0)
 
 
+class _StubValidityJudge:
+    """Returns a fixed verdict regardless of input."""
+
+    def __init__(self, verdict):
+        self.verdict = verdict
+
+    def assess(self, prompt, rubric, answer):
+        return self.verdict
+
+
+class SemanticTruthGradingTests(unittest.TestCase):
+    _prompt = Prompt(id="pf", category="math_proof", kind="semantic_truth",
+                     prompt="prove X", rubric="must show Y")
+
+    def test_majority_valid_is_correct(self):
+        judges = [_StubValidityJudge("valid"), _StubValidityJudge("valid"),
+                  _StubValidityJudge("invalid")]
+        res = grade_semantic_truth(self._prompt, "some proof", judges)
+        self.assertTrue(res.correct)
+        self.assertIn("valid 2/3", res.detail)
+
+    def test_minority_valid_is_incorrect(self):
+        judges = [_StubValidityJudge("valid"), _StubValidityJudge("invalid"),
+                  _StubValidityJudge("invalid")]
+        res = grade_semantic_truth(self._prompt, "some proof", judges)
+        self.assertFalse(res.correct)
+
+    def test_tie_counts_against(self):
+        # Even panel, 1-1: strict majority not reached -> incorrect.
+        judges = [_StubValidityJudge("valid"), _StubValidityJudge("invalid")]
+        res = grade_semantic_truth(self._prompt, "p", judges)
+        self.assertFalse(res.correct)
+
+    def test_abstention_counts_against(self):
+        judges = [_StubValidityJudge("valid"), _StubValidityJudge("valid"),
+                  _StubValidityJudge("unsure")]
+        # 2 of 3 valid -> still a strict majority -> correct.
+        self.assertTrue(grade_semantic_truth(self._prompt, "p", judges).correct)
+        judges = [_StubValidityJudge("valid"), _StubValidityJudge("unsure"),
+                  _StubValidityJudge("unsure")]
+        # 1 of 3 valid -> not a majority -> incorrect.
+        self.assertFalse(grade_semantic_truth(self._prompt, "p", judges).correct)
+
+    def test_semantic_prompts_graded_in_full_run(self):
+        prompts = [p for p in load_prompts() if p.kind == "semantic_truth"]
+        self.assertTrue(prompts)  # dataset ships proof prompts
+        models = default_models()
+        result = run_benchmark(prompts, models, MockModelClient(), rng=random.Random(0))
+        sem_cells = [c for c in result.cells if c.kind == "semantic_truth"]
+        self.assertEqual(len(sem_cells), len(prompts) * len(models))
+        # All graded binary, none ranked.
+        self.assertTrue(all(c.correct is not None for c in sem_cells))
+        self.assertTrue(all(c.rank is None for c in sem_cells))
+        # Mock: low-tier proofs are "incomplete" -> invalid; higher tiers valid.
+        low = [c for c in sem_cells if c.tier.endswith("low")]
+        high = [c for c in sem_cells if c.tier.endswith("high")]
+        self.assertTrue(all(not c.correct for c in low))
+        self.assertTrue(all(c.correct for c in high))
+
+
 class CopilotCliRetryTests(unittest.TestCase):
     def test_rate_limit_marker_detection(self):
         from model_judging.copilot_client import _looks_rate_limited
@@ -157,11 +218,11 @@ class CopilotCliRetryTests(unittest.TestCase):
 
 
 class DatasetTests(unittest.TestCase):
-    def test_load_prompts_has_both_kinds(self):
+    def test_load_prompts_has_all_kinds(self):
         prompts = load_prompts()
         self.assertGreaterEqual(len(prompts), 8)
         kinds = {p.kind for p in prompts}
-        self.assertEqual(kinds, {"hard_truth", "subjective"})
+        self.assertEqual(kinds, {"hard_truth", "subjective", "semantic_truth"})
 
     def test_hard_truth_directive_appended(self):
         p = Prompt(id="x", category="c", kind="hard_truth", prompt="do it",
@@ -295,11 +356,13 @@ class DefaultJudgePanelTests(unittest.TestCase):
         panel = default_judge_models()
         ids = [m.id for m in panel]
         self.assertEqual(ids, list(DEFAULT_JUDGE_IDS))
-        # One cheap model per vendor, all low-tier.
+        # One cheap-to-run model per vendor (Anthropic / OpenAI / Google). Gemini
+        # 3.1 Pro is chosen over Flash because Flash bills ~14x premium on Copilot.
         self.assertEqual(
-            ids, ["claude-haiku-4.5", "gpt-5.4-mini", "gemini-3.5-flash"]
+            ids, ["claude-haiku-4.5", "gpt-5.4-mini", "gemini-3.1-pro-preview"]
         )
-        self.assertTrue(all(m.tier.endswith("low") for m in panel))
+        tiers = {m.tier.split("-")[0] for m in panel}
+        self.assertEqual(tiers, {"claude", "openai", "google"})
 
     def test_harness_default_uses_full_panel(self):
         # A counting client records how many matchup-judge calls happen, which

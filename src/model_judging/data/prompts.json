@@ -103,6 +103,22 @@
       "kind": "subjective",
       "prompt": "write a short paragraph arguing why public libraries are still importent in the digital age",
       "rubric": "Clear thesis, 2-3 concrete supporting points, persuasive, well-structured, no grammar errors."
+    },
+    {
+      "id": "proof_01",
+      "category": "math_proof",
+      "kind": "semantic_truth",
+      "prompt": "prove that the simple symmetric random walk in 3 dimensions is not recurrent (i.e. it is transient). keep it under 300 words",
+      "evaluation": { "type": "proof" },
+      "rubric": "A valid proof shows the expected number of returns to the origin is finite (equivalently the return probability is < 1), typically via the local CLT estimate P(S_2n = 0) ~ c n^{-3/2}, whose sum over n converges in 3D. Hand-waving 'it spreads out so it won't come back' without the convergence argument is invalid."
+    },
+    {
+      "id": "logic_01",
+      "category": "logic_proof",
+      "kind": "semantic_truth",
+      "prompt": "given that p implies q, and that (not p) implies r, and that q is false, show that r must be true",
+      "evaluation": { "type": "proof" },
+      "rubric": "Valid reasoning: from q false and (p -> q), modus tollens gives not p; from not p and (not p -> r), modus ponens gives r. Must actually invoke modus tollens then modus ponens, not just assert the conclusion."
     }
   ]
 }

@@ -196,7 +196,7 @@ def main(argv: list[str] | None = None) -> int:
     run.add_argument("--models", default=None, help="Comma-separated id/tier filter")
     run.add_argument("--judge", default=None,
                      help="Comma-separated matchup-judge model id(s). Default: a cheap "
-                          "vendor-balanced panel (claude-haiku-4.5, gpt-5.4-mini, gemini-3.5-flash)")
+                          "vendor-balanced panel (claude-haiku-4.5, gpt-5.4-mini, gemini-3.1-pro-preview)")
     run.add_argument("--matchup-rounds", type=int, default=None,
                      help="Swiss rounds for subjective ranking (default: auto=ceil(log2 n); "
                           "0 = exhaustive round-robin)")
