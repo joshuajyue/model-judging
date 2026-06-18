@@ -143,8 +143,12 @@ python run_benchmark.py clean-sessions --purge-isolated
 
 `src/model_judging/registry.py` lists the eight benchmarked models with tier
 labels (ids are Copilot CLI model ids). Prompts live in
-`src/model_judging/data/prompts.json` — add more (10+ per category) to firm up
-the rankings.
+`src/model_judging/data/prompts.json` — currently 25 subjective prompts across
+15 everyday categories (email, advice, essay, message, complaint, apology,
+explanation, creative, review, etc.), plus a few hard-truth (code/calculus) and
+semantic-truth (proof) prompts kept as scaffolding. For hard objective coding/math
+evaluation, defer to an established benchmark such as SWE-bench rather than
+hand-rolling graded problems here.
 
 ## Judging library quick start
 

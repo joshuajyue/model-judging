@@ -91,6 +91,20 @@
       "rubric": "Polite but firm, states the issue and duration, requests timely repair, professional tone, concise."
     },
     {
+      "id": "email_03",
+      "category": "email",
+      "kind": "subjective",
+      "prompt": "i need to email a client to tell them the project will be 2 weeks late because our designer quit. dont make excuses but dont throw anyone under the bus either",
+      "rubric": "Takes ownership without oversharing internal blame, states the new timeline clearly, reassures on quality/next steps, professional and calm, concise."
+    },
+    {
+      "id": "email_04",
+      "category": "email",
+      "kind": "subjective",
+      "prompt": "write a reply declining a meeting invite from a coworker, i'm double booked but i still wanna help, suggest async instead. keep it under 80 words",
+      "rubric": "Politely declines, gives a brief honest reason, offers a concrete alternative (async/notes/another time), warm, and respects the 80-word limit."
+    },
+    {
       "id": "advice_01",
       "category": "advice",
       "kind": "subjective",
@@ -98,11 +112,144 @@
       "rubric": "Balanced, surfaces concrete trade-offs (finances, growth, burnout, life stage), asks clarifying considerations, actionable, not preachy."
     },
     {
+      "id": "advice_02",
+      "category": "advice",
+      "kind": "subjective",
+      "prompt": "my roommate never does the dishes and its drivin me nuts but i dont wanna start a huge fight. how do i bring it up",
+      "rubric": "Suggests a calm, specific conversation opener, focuses on a concrete system not blame, acknowledges the relationship, practical and non-preachy."
+    },
+    {
+      "id": "advice_03",
+      "category": "advice",
+      "kind": "subjective",
+      "prompt": "how do i ask my boss for a raise without soundin entitled, i've been here 2 yrs and took on way more work",
+      "rubric": "Advises evidence/impact framing, timing and a concrete number/range, professional confidence over apology, anticipates pushback, actionable."
+    },
+    {
       "id": "essay_01",
       "category": "essay",
       "kind": "subjective",
       "prompt": "write a short paragraph arguing why public libraries are still importent in the digital age",
       "rubric": "Clear thesis, 2-3 concrete supporting points, persuasive, well-structured, no grammar errors."
+    },
+    {
+      "id": "essay_02",
+      "category": "essay",
+      "kind": "subjective",
+      "prompt": "write a tight argument for whether remote work is better than office work. pick a side and actually commit, dont sit on the fence. like 150 words",
+      "rubric": "Takes a clear side, 2-3 specific supporting reasons, acknowledges and rebuts one counterpoint, cohesive, roughly respects the length, no waffling."
+    },
+    {
+      "id": "essay_03",
+      "category": "essay",
+      "kind": "subjective",
+      "prompt": "write an opening paragraph for a personal statement about why i wanna study marine biology, i grew up near the ocean and volunteered at an aquarium",
+      "rubric": "Hooks the reader, weaves in the specific personal details authentically, avoids cliche, sets up motivation, polished prose."
+    },
+    {
+      "id": "cover_letter_01",
+      "category": "cover_letter",
+      "kind": "subjective",
+      "prompt": "i need a cover letter for a barista job at a small coffee shop, i've never had a real job but i'm reliable and good w people. keep it short",
+      "rubric": "Warm and genuine, turns lack of experience into transferable strengths, fits the small-shop vibe, specific not generic, concise, error-free."
+    },
+    {
+      "id": "message_01",
+      "category": "message",
+      "kind": "subjective",
+      "prompt": "text my friend that i have to bail on our dinner tonight cuz i'm exhausted from work, i feel bad and wanna reschedule. casual tone",
+      "rubric": "Sounds like a real friendly text, apologizes without overdoing it, gives a brief honest reason, proposes rescheduling, casual and warm."
+    },
+    {
+      "id": "message_02",
+      "category": "message",
+      "kind": "subjective",
+      "prompt": "help me word a text to my sister to tell her i cant make it to her birthday dinner cuz of a work trip. she'll be upset so be gentle",
+      "rubric": "Gentle and caring, leads with the relationship not the excuse, expresses genuine disappointment, offers to celebrate another way, warm tone."
+    },
+    {
+      "id": "complaint_01",
+      "category": "complaint",
+      "kind": "subjective",
+      "prompt": "write a complaint to a restaurant, my online order was missing 2 items and the rest was cold. i want a refund but i'm not tryna be a jerk about it",
+      "rubric": "Firm but civil, states the specific problems and order details, makes a clear reasonable ask (refund/redelivery), no insults, professional."
+    },
+    {
+      "id": "apology_01",
+      "category": "apology",
+      "kind": "subjective",
+      "prompt": "i missed a deadline and it made my coworker look bad in front of the team. i need to apologize to them properly, not a fake corporate sorry",
+      "rubric": "Genuine accountability, names the specific impact on them, no excuses or deflection, states a concrete fix going forward, sincere not groveling."
+    },
+    {
+      "id": "summary_01",
+      "category": "summary",
+      "kind": "subjective",
+      "prompt": "explain the plot of romeo and juliet in like 3 sentences for a 10 year old, dont make it scary",
+      "rubric": "Accurate core plot, age-appropriate and gentle wording, genuinely about 3 sentences, clear, avoids graphic detail."
+    },
+    {
+      "id": "explain_01",
+      "category": "explanation",
+      "kind": "subjective",
+      "prompt": "explain why the sky is blue to a curious kid, no jargon, make it fun but still actually correct",
+      "rubric": "Scientifically correct (scattering of shorter/blue wavelengths), no unexplained jargon, engaging kid-friendly framing, concise."
+    },
+    {
+      "id": "explain_02",
+      "category": "explanation",
+      "kind": "subjective",
+      "prompt": "explain what recursion is to someone learnin to code, use a simple everyday analogy and keep it short",
+      "rubric": "Correct (a thing defined in terms of itself with a base case), one clear everyday analogy, mentions the stopping condition, beginner-friendly, concise."
+    },
+    {
+      "id": "creative_01",
+      "category": "creative",
+      "kind": "subjective",
+      "prompt": "write the first paragraph of a spooky short story set in an empty subway station at 3am. make it creepy but not gory",
+      "rubric": "Vivid atmosphere and tension, strong sensory detail, a hook that pulls you in, restraint (creepy not gory), polished prose."
+    },
+    {
+      "id": "creative_02",
+      "category": "creative",
+      "kind": "subjective",
+      "prompt": "write me a short 4 line poem about autumn, something a lil wistful",
+      "rubric": "Evocative autumn imagery, a wistful tone, some craft (rhythm or sound), roughly four lines, not cliche or generic."
+    },
+    {
+      "id": "social_01",
+      "category": "social_media",
+      "kind": "subjective",
+      "prompt": "i need a witty instagram caption for a photo from the top of a mountain i just hiked, maybe a lil pun. not too cringe",
+      "rubric": "Punchy and witty, fits the summit/hiking moment, a clever (not groan-worthy) pun, appropriately short, avoids cliche caption energy."
+    },
+    {
+      "id": "review_01",
+      "category": "review",
+      "kind": "subjective",
+      "prompt": "write a balanced review of a budget phone, good battery and screen but slow and bad camera. like 100 words, be fair not ranty",
+      "rubric": "Balanced pros and cons, specific not vague, a clear verdict/recommendation and who it's for, fair tone, roughly respects the length."
+    },
+    {
+      "id": "negotiation_01",
+      "category": "negotiation",
+      "kind": "subjective",
+      "prompt": "help me message a seller on facebook marketplace, they want 200 for a desk and i wanna offer 150 without insultin them",
+      "rubric": "Friendly and respectful, makes a clear offer with a light justification, leaves room to meet in the middle, low-pressure, concise."
+    },
+    {
+      "id": "condolence_01",
+      "category": "condolence",
+      "kind": "subjective",
+      "prompt": "my friend's dog just passed away, i wanna send her a message but everything i write sounds dumb. help me say somethin that actually means something",
+      "rubric": "Warm and sincere, acknowledges the specific loss (the dog), validates her grief, offers presence/support, avoids platitudes and toxic positivity."
+    },
+    {
+      "id": "feedback_01",
+      "category": "feedback",
+      "kind": "subjective",
+      "prompt": "i have to give a junior on my team feedback that their report was messy and hard to follow, but they clearly worked hard. how do i say it kindly but honestly",
+      "rubric": "Specific and honest about the issues, acknowledges the effort genuinely, actionable suggestions, encouraging tone, avoids vague or harsh framing."
     },
     {
       "id": "proof_01",
