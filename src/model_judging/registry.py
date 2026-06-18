@@ -38,6 +38,14 @@ class ModelSpec:
     reasoning_effort: str | None = None
     """Optional reasoning effort. ``None`` means use the model default (medium)."""
 
+    premium_per_call: float = 1.0
+    """Copilot premium-request *multiplier* per call (the cost estimator's unit).
+
+    These are roughly fixed per model on the Copilot CLI (a request multiplier,
+    largely independent of length) and were observed via ``verify-models``. Used
+    only to project relative cost before a run; ignored by the GitHub Models path.
+    """
+
     def cost_usd(self, input_tokens: int, output_tokens: int) -> float:
         return (
             input_tokens * self.input_price_per_1m
@@ -47,16 +55,17 @@ class ModelSpec:
 
 # Frontier of each current "tier". IDs are Copilot CLI model ids. Reasoning level
 # is left at the model default (medium) for every model to keep the prototype
-# cheap, per design.
+# cheap, per design. ``premium_per_call`` values are the per-request multipliers
+# observed via ``verify-models`` (note Gemini Flash is ~14x while Pro is ~1x).
 DEFAULT_MODELS: tuple[ModelSpec, ...] = (
-    ModelSpec("claude-opus-4.8", "Claude Opus 4.8", "claude-high", 5.0, 25.0),
-    ModelSpec("claude-sonnet-4.6", "Claude Sonnet 4.6", "claude-mid", 3.0, 15.0),
-    ModelSpec("claude-haiku-4.5", "Claude Haiku 4.5", "claude-low", 1.0, 5.0),
-    ModelSpec("gpt-5.5", "GPT-5.5", "openai-high", 1.25, 10.0),
-    ModelSpec("gpt-5.3-codex", "GPT-5.3 Codex", "openai-coding", 1.25, 10.0),
-    ModelSpec("gpt-5.4-mini", "GPT-5.4 mini", "openai-low", 0.25, 2.0),
-    ModelSpec("gemini-3.1-pro-preview", "Gemini 3.1 Pro", "google-high", 1.25, 10.0),
-    ModelSpec("gemini-3.5-flash", "Gemini 3.5 Flash", "google-low", 0.30, 2.5),
+    ModelSpec("claude-opus-4.8", "Claude Opus 4.8", "claude-high", 5.0, 25.0, premium_per_call=15.0),
+    ModelSpec("claude-sonnet-4.6", "Claude Sonnet 4.6", "claude-mid", 3.0, 15.0, premium_per_call=1.0),
+    ModelSpec("claude-haiku-4.5", "Claude Haiku 4.5", "claude-low", 1.0, 5.0, premium_per_call=0.33),
+    ModelSpec("gpt-5.5", "GPT-5.5", "openai-high", 1.25, 10.0, premium_per_call=7.5),
+    ModelSpec("gpt-5.3-codex", "GPT-5.3 Codex", "openai-coding", 1.25, 10.0, premium_per_call=1.0),
+    ModelSpec("gpt-5.4-mini", "GPT-5.4 mini", "openai-low", 0.25, 2.0, premium_per_call=0.33),
+    ModelSpec("gemini-3.1-pro-preview", "Gemini 3.1 Pro", "google-high", 1.25, 10.0, premium_per_call=1.0),
+    ModelSpec("gemini-3.5-flash", "Gemini 3.5 Flash", "google-low", 0.30, 2.5, premium_per_call=14.0),
 )
 
 

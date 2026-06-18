@@ -6,6 +6,7 @@ import unittest
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from model_judging.assess import (
     extract_numeric_answer,
@@ -21,6 +22,7 @@ from model_judging.harness import run_benchmark, _percentile, LatencyStats
 from model_judging.mock import MockModelClient
 from model_judging.registry import DEFAULT_JUDGE_IDS, default_judge_models, default_models
 from model_judging.report import write_detailed_csv, write_summary_csv
+from run_benchmark import main
 
 
 class _FakeJudge:
@@ -388,6 +390,65 @@ class DefaultJudgePanelTests(unittest.TestCase):
 
         # Same matchups, but the default panel has 3 judges -> 3x the judge calls.
         self.assertEqual(default_client.judge_calls, single_client.judge_calls * 3)
+
+
+class EstimatorTests(unittest.TestCase):
+    def test_estimate_counts_match_actual_run(self):
+        # Count actual model calls in a mock run and compare to the estimate.
+        from model_judging.estimate import estimate_run
+
+        class CountingClient(MockModelClient):
+            def __init__(self):
+                self.calls = 0
+
+            def complete(self, model, prompt, system=None):
+                self.calls += 1
+                return super().complete(model, prompt, system)
+
+        prompts = load_prompts()
+        models = default_models()
+        panel = default_judge_models()
+        est = estimate_run(prompts, models, panel)
+
+        client = CountingClient()
+        run_benchmark(prompts, models, client, rng=random.Random(0))
+        # All models answer (no errors in the mock), so the estimate is exact.
+        self.assertEqual(client.calls, est.total_calls)
+
+    def test_estimate_breakdown(self):
+        from model_judging.estimate import estimate_run
+        prompts = load_prompts()
+        models = default_models()
+        panel = default_judge_models()
+        est = estimate_run(prompts, models, panel)
+        self.assertEqual(est.answer_calls, len(prompts) * len(models))
+        self.assertEqual(est.total_calls,
+                         est.answer_calls + est.semantic_judge_calls + est.ranking_judge_calls)
+        # Premium for an answer phase = n_prompts * sum(model multipliers).
+        self.assertAlmostEqual(
+            est.answer_premium, len(prompts) * sum(m.premium_per_call for m in models)
+        )
+        self.assertGreater(est.est_usd, 0)
+
+    def test_estimate_only_does_not_run(self):
+        rc = main(["run", "--estimate-only", "--limit", "2"])
+        self.assertEqual(rc, 0)
+
+
+class ProgressClientTests(unittest.TestCase):
+    def test_ticks_once_per_call(self):
+        from model_judging.estimate import estimate_run
+        from model_judging.progress import ProgressBar, ProgressClient
+        prompts = [p for p in load_prompts() if p.category == "email"][:1]
+        models = default_models()
+        panel = default_judge_models()
+        est = estimate_run(prompts, models, panel)
+
+        bar = ProgressBar(est.total_calls, enabled=False)
+        client = ProgressClient(MockModelClient(), bar)
+        run_benchmark(prompts, models, client, rng=random.Random(0))
+        # Every underlying call (answers + matchup judges) ticked exactly once.
+        self.assertEqual(bar._done, est.total_calls)
 
 
 class EndToEndTests(unittest.TestCase):

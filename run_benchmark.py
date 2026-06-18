@@ -33,8 +33,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parent / "src"))
 from model_judging.client import GitHubModelsClient, fetch_catalog
 from model_judging.copilot_client import CopilotCliClient, _resolve_copilot_home, verify_model
 from model_judging.dataset import load_prompts
+from model_judging.estimate import estimate_run, format_estimate
 from model_judging.harness import run_benchmark
 from model_judging.mock import MockModelClient
+from model_judging.progress import ProgressBar, ProgressClient
 from model_judging.registry import default_judge_models, default_models, models_by_id
 from model_judging.report import write_detailed_csv, write_summary_csv
 from model_judging.sessions import clean_sessions, default_real_home, purge_home
@@ -57,21 +59,41 @@ def cmd_run(args: argparse.Namespace) -> int:
         print("No models matched the filter.", file=sys.stderr)
         return 2
 
+    # Resolve the judge panel first so it can feed the estimate.
+    judge_models = None
+    if args.judge:
+        registry = models_by_id()
+        judge_ids = [j.strip() for j in args.judge.split(",") if j.strip()]
+        unknown = [j for j in judge_ids if j not in registry]
+        if unknown:
+            print(f"Unknown judge model id(s): {', '.join(unknown)}", file=sys.stderr)
+            return 2
+        judge_models = [registry[j] for j in judge_ids]
+    panel = judge_models if judge_models is not None else default_judge_models()
+
+    # Pre-run estimate. Cost/time are only meaningful for the live Copilot path.
+    show_cost = args.live and args.provider != "github"
+    est = estimate_run(prompts, models, panel, matchup_rounds=args.matchup_rounds)
+    print(format_estimate(est, concurrency=args.concurrency, throttle=args.throttle,
+                          show_cost=show_cost))
+    if args.estimate_only:
+        return 0
+
     if args.live:
         if args.provider == "github":
             client = GitHubModelsClient(token=args.token)
-            print(f"LIVE run: {len(models)} models x {len(prompts)} prompts via GitHub Models")
+            print(f"\nLIVE run: {len(models)} models x {len(prompts)} prompts via GitHub Models")
         else:
             client = CopilotCliClient(
                 min_interval=args.throttle,
                 max_retries=args.max_retries,
             )
             print(
-                f"LIVE run: {len(models)} models x {len(prompts)} prompts via Copilot CLI "
+                f"\nLIVE run: {len(models)} models x {len(prompts)} prompts via Copilot CLI "
                 f"(throttle={args.throttle:g}s, max_retries={args.max_retries}, "
                 f"concurrency={args.concurrency})"
             )
-            if args.provider != "github" and args.concurrency > 1:
+            if args.concurrency > 1:
                 print(
                     "  NOTE: each call is a separate ~180 MB copilot process. High "
                     "concurrency saturates CPU (can freeze the desktop) AND inflates the "
@@ -83,30 +105,30 @@ def cmd_run(args: argparse.Namespace) -> int:
                 )
     else:
         client = MockModelClient()
-        print(f"DRY-RUN (offline mock): {len(models)} models x {len(prompts)} prompts")
+        print(f"\nDRY-RUN (offline mock): {len(models)} models x {len(prompts)} prompts")
 
-    judge_models = None
-    if args.judge:
-        registry = models_by_id()
-        judge_ids = [j.strip() for j in args.judge.split(",") if j.strip()]
-        unknown = [j for j in judge_ids if j not in registry]
-        if unknown:
-            print(f"Unknown judge model id(s): {', '.join(unknown)}", file=sys.stderr)
-            return 2
-        judge_models = [registry[j] for j in judge_ids]
-
-    panel = judge_models if judge_models is not None else default_judge_models()
     print("Judge panel: " + ", ".join(m.name for m in panel))
+
+    # Progress bar (stderr, auto-disabled off-tty). Suppress it under --verbose,
+    # which prints per-call lines instead.
+    bar = None
+    if not args.verbose:
+        bar = ProgressBar(est.total_calls)
+        client = ProgressClient(client, bar)
 
     def progress(msg: str) -> None:
         if args.verbose:
             print(f"  {msg}")
 
-    result = run_benchmark(
-        prompts, models, client, judge_models=judge_models,
-        matchup_rounds=args.matchup_rounds, concurrency=args.concurrency,
-        progress=progress,
-    )
+    try:
+        result = run_benchmark(
+            prompts, models, client, judge_models=judge_models,
+            matchup_rounds=args.matchup_rounds, concurrency=args.concurrency,
+            progress=progress,
+        )
+    finally:
+        if bar is not None:
+            bar.close()
 
     out_dir = Path(args.out)
     detailed = write_detailed_csv(result, out_dir / "detailed.csv")
@@ -210,7 +232,10 @@ def main(argv: list[str] | None = None) -> int:
                           "rankings (phase 2). Probed safe to ~20 on the Copilot CLI "
                           "(default: 1 = sequential)")
     run.add_argument("--out", default="results", help="Output directory (default: results)")
-    run.add_argument("--verbose", action="store_true", help="Print per-call progress")
+    run.add_argument("--estimate-only", action="store_true",
+                     help="Print the call/cost/time estimate and exit without running")
+    run.add_argument("--verbose", action="store_true",
+                     help="Print per-call progress lines instead of the progress bar")
     run.set_defaults(func=cmd_run)
 
     verify = sub.add_parser("verify-models", help="Check registry IDs are accepted by the provider")

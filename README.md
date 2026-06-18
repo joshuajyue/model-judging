@@ -59,11 +59,38 @@ python run_benchmark.py run --live --provider github --token ghp_xxxxxxxx
 # Confirm every registry model id is accepted before a paid run:
 python run_benchmark.py verify-models                       # pings each model via the CLI
 python run_benchmark.py verify-models --provider github --token ghp_xxxxxxxx
+
+# Preview projected calls / premium-requests / USD / time, then exit:
+python run_benchmark.py run --live --concurrency 6 --throttle 1 --estimate-only
 ```
 
 Useful flags: `--limit N` (cap prompts), `--models claude,openai-low` (filter by
 id/tier), `--judge id1,id2,...` (override the matchup-judge panel),
-`--concurrency N` (parallel calls), `--out DIR`, `--verbose`.
+`--concurrency N` (parallel calls), `--estimate-only` (cost preview), `--out DIR`,
+`--verbose`.
+
+### Cost / time estimate and progress
+
+Every `run` prints an up-front **estimate** of how many `copilot` calls it will
+make, the projected Copilot premium-requests and a marginal USD figure, and a
+rough wall-clock time (call counts mirror the harness exactly; cost uses the
+per-model premium multipliers in `registry.py`). Use `--estimate-only` to preview
+without spending anything:
+
+```
+Estimate:
+  prompts x models      33 x 8
+  answer calls          264
+  judge calls           948  (proof 48 + ranking 900, panel of 3)
+  TOTAL calls           1212
+  premium requests      ~1850  (answers 1325 + judges 525)
+  est. USD (@$0.04/premium)  ~$73.99
+  est. wall time        ~37 min  (concurrency 6, throttle 1s)
+```
+
+During the run a live **progress bar** (on stderr) shows completed/total calls,
+throughput and ETA. It ticks on every underlying call — answers, proof judges and
+matchup judges alike. Pass `--verbose` to get per-call log lines instead.
 
 ### Concurrency (and its effect on latency)
 
@@ -195,8 +222,10 @@ decision = pipeline.judge(TaskKind.SUBJECTIVE, candidates)
 - `copilot_client.py` — Copilot CLI client (default; shells out to `copilot -p`, captures latency/tokens/premium-requests)
 - `sessions.py` — Cleanup helpers for the throwaway sessions `copilot -p` persists
 - `dataset.py` — Prompt dataset loader and answer-format directives
-- `assess.py` — Hard-truth grading and subjective matchup ranking
+- `assess.py` — Hard-truth grading, semantic-truth (proof) validity panel, subjective matchup ranking
 - `harness.py` — Benchmark orchestrator
+- `estimate.py` — Pre-run call/cost/time estimator
+- `progress.py` — Thread-safe progress bar + client wrapper
 - `report.py` — CSV reporting
 - `mock.py` — Offline deterministic client for dry-runs/tests
 

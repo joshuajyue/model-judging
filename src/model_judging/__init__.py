@@ -10,11 +10,13 @@ from .client import CompletionResult, GitHubModelsClient, ModelClient, fetch_cat
 from .copilot_client import CopilotCliClient, CopilotCliError, verify_model
 from .complexity import ComplexityFeatures, ComplexityTier, classify_tier, extract_features, score_complexity
 from .dataset import Prompt, load_prompts
+from .estimate import RunEstimate, estimate_run, format_estimate
 from .executors import CodeExecutionJudge, JSONSchemaValidationJudge
 from .harness import BenchmarkResult, CellResult, LatencyStats, run_benchmark
 from .judges import GitHubModelsJudge
 from .mock import MockModelClient
 from .pipeline import JudgingPipeline
+from .progress import ProgressBar, ProgressClient
 from .registry import ModelSpec, default_judge_models, default_models, models_by_id
 from .report import write_detailed_csv, write_summary_csv
 from .types import Candidate, JudgeDecision, ObjectiveCheck, PairwiseOutcome, TaskKind
@@ -50,9 +52,14 @@ __all__ = [
     "ModelSpec",
     "MockModelClient",
     "Prompt",
+    "ProgressBar",
+    "ProgressClient",
+    "RunEstimate",
     "default_judge_models",
     "default_models",
+    "estimate_run",
     "fetch_catalog",
+    "format_estimate",
     "grade_hard_truth",
     "grade_semantic_truth",
     "load_prompts",

@@ -349,6 +349,26 @@ def _swiss_rank(
     return _ranks_from_sorted(keyed)
 
 
+def plan_matchups(
+    n: int, rounds: int | None = None, max_round_robin: int = 4
+) -> tuple[str, int]:
+    """Decide the matchup scheme for ``n`` answers: ``(mode, num_matchups)``.
+
+    Single source of truth shared by :func:`rank_answers` and the cost estimator,
+    so projected and actual matchup counts can never drift. ``mode`` is
+    ``"round_robin"`` or ``"swiss"``.
+    """
+    if n < 2:
+        return "round_robin", 0
+    if rounds is None:
+        rounds = max(1, math.ceil(math.log2(n)))
+    round_robin_games = n * (n - 1) // 2
+    swiss_games = rounds * (n // 2)
+    if rounds <= 0 or n <= max_round_robin or round_robin_games <= swiss_games:
+        return "round_robin", round_robin_games
+    return "swiss", swiss_games
+
+
 def rank_answers(
     prompt: Prompt,
     answers: dict[str, str],
@@ -383,8 +403,7 @@ def rank_answers(
     if rounds is None:
         rounds = max(1, math.ceil(math.log2(n)))
 
-    round_robin_games = n * (n - 1) // 2
-    swiss_games = rounds * (n // 2)
-    if rounds <= 0 or n <= max_round_robin or round_robin_games <= swiss_games:
+    mode, _ = plan_matchups(n, rounds, max_round_robin)
+    if mode == "round_robin":
         return _round_robin_rank(prompt, answers, judges, rng)
     return _swiss_rank(prompt, answers, judges, rng, rounds)
