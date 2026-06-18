@@ -64,5 +64,22 @@ def default_models() -> list[ModelSpec]:
     return list(DEFAULT_MODELS)
 
 
+# Default matchup-judge panel: the cheapest model from each vendor. Using one
+# cheap judge per vendor keeps judging cost negligible *and* balances per-vendor
+# self-preference bias (a Claude judge mildly favours Claude answers, etc.), so
+# the aggregated verdict is more neutral than any single judge -- including an
+# expensive one. Override with run_benchmark's --judge.
+DEFAULT_JUDGE_IDS: tuple[str, ...] = (
+    "claude-haiku-4.5",
+    "gpt-5.4-mini",
+    "gemini-3.5-flash",
+)
+
+
+def default_judge_models() -> list[ModelSpec]:
+    by_id = models_by_id()
+    return [by_id[mid] for mid in DEFAULT_JUDGE_IDS if mid in by_id]
+
+
 def models_by_id() -> dict[str, ModelSpec]:
     return {m.id: m for m in DEFAULT_MODELS}

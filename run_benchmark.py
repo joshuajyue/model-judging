@@ -35,7 +35,7 @@ from model_judging.copilot_client import CopilotCliClient, _resolve_copilot_home
 from model_judging.dataset import load_prompts
 from model_judging.harness import run_benchmark
 from model_judging.mock import MockModelClient
-from model_judging.registry import default_models, models_by_id
+from model_judging.registry import default_judge_models, default_models, models_by_id
 from model_judging.report import write_detailed_csv, write_summary_csv
 from model_judging.sessions import clean_sessions, default_real_home, purge_home
 
@@ -88,10 +88,15 @@ def cmd_run(args: argparse.Namespace) -> int:
     judge_models = None
     if args.judge:
         registry = models_by_id()
-        if args.judge not in registry:
-            print(f"Unknown judge model id: {args.judge}", file=sys.stderr)
+        judge_ids = [j.strip() for j in args.judge.split(",") if j.strip()]
+        unknown = [j for j in judge_ids if j not in registry]
+        if unknown:
+            print(f"Unknown judge model id(s): {', '.join(unknown)}", file=sys.stderr)
             return 2
-        judge_models = [registry[args.judge]]
+        judge_models = [registry[j] for j in judge_ids]
+
+    panel = judge_models if judge_models is not None else default_judge_models()
+    print("Judge panel: " + ", ".join(m.name for m in panel))
 
     def progress(msg: str) -> None:
         if args.verbose:
@@ -189,7 +194,9 @@ def main(argv: list[str] | None = None) -> int:
     run.add_argument("--token", default=None, help="GitHub PAT for --provider github (else $GITHUB_TOKEN)")
     run.add_argument("--limit", type=int, default=None, help="Cap number of prompts")
     run.add_argument("--models", default=None, help="Comma-separated id/tier filter")
-    run.add_argument("--judge", default=None, help="Model id to use as the matchup judge")
+    run.add_argument("--judge", default=None,
+                     help="Comma-separated matchup-judge model id(s). Default: a cheap "
+                          "vendor-balanced panel (claude-haiku-4.5, gpt-5.4-mini, gemini-3.5-flash)")
     run.add_argument("--matchup-rounds", type=int, default=None,
                      help="Swiss rounds for subjective ranking (default: auto=ceil(log2 n); "
                           "0 = exhaustive round-robin)")

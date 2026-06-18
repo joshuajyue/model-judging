@@ -25,7 +25,7 @@ from .assess import (
 )
 from .client import CompletionResult, ModelClient
 from .dataset import Prompt
-from .registry import ModelSpec
+from .registry import ModelSpec, default_judge_models
 
 ProgressFn = Callable[[str], None]
 
@@ -161,7 +161,12 @@ def run_benchmark(
             raw_log(msg)
 
     if judges is None:
-        panel = judge_models if judge_models is not None else models[:1]
+        # Default to the vendor-balanced cheap judge panel; fall back to the
+        # first contestant only if the registry panel is somehow empty.
+        if judge_models is not None:
+            panel = judge_models
+        else:
+            panel = default_judge_models() or models[:1]
         judges = [ModelMatchupJudge(client, jm) for jm in panel]
 
     result = BenchmarkResult()

@@ -18,7 +18,7 @@ from model_judging.copilot_client import CopilotCliClient
 from model_judging.dataset import Prompt, load_prompts
 from model_judging.harness import run_benchmark, _percentile, LatencyStats
 from model_judging.mock import MockModelClient
-from model_judging.registry import default_models
+from model_judging.registry import DEFAULT_JUDGE_IDS, default_judge_models, default_models
 from model_judging.report import write_detailed_csv, write_summary_csv
 
 
@@ -288,6 +288,43 @@ class ReportColumnTests(unittest.TestCase):
         self.assertIn("avg_premium_requests", row)
         self.assertIn("avg_est_cost_usd", row)
         self.assertIn("n_ok", row)
+
+
+class DefaultJudgePanelTests(unittest.TestCase):
+    def test_panel_is_cheap_and_vendor_balanced(self):
+        panel = default_judge_models()
+        ids = [m.id for m in panel]
+        self.assertEqual(ids, list(DEFAULT_JUDGE_IDS))
+        # One cheap model per vendor, all low-tier.
+        self.assertEqual(
+            ids, ["claude-haiku-4.5", "gpt-5.4-mini", "gemini-3.5-flash"]
+        )
+        self.assertTrue(all(m.tier.endswith("low") for m in panel))
+
+    def test_harness_default_uses_full_panel(self):
+        # A counting client records how many matchup-judge calls happen, which
+        # equals (matchups * panel size). Compare default panel vs a single judge.
+        class CountingClient(MockModelClient):
+            def __init__(self):
+                self.judge_calls = 0
+
+            def complete(self, model, prompt, system=None):
+                if "[Answer A]" in prompt and "[Answer B]" in prompt:
+                    self.judge_calls += 1
+                return super().complete(model, prompt, system)
+
+        prompts = [p for p in load_prompts() if p.category == "email"][:1]
+        models = default_models()
+
+        default_client = CountingClient()
+        run_benchmark(prompts, models, default_client, rng=random.Random(0))
+
+        single_client = CountingClient()
+        run_benchmark(prompts, models, single_client,
+                      judge_models=[models[0]], rng=random.Random(0))
+
+        # Same matchups, but the default panel has 3 judges -> 3x the judge calls.
+        self.assertEqual(default_client.judge_calls, single_client.judge_calls * 3)
 
 
 class EndToEndTests(unittest.TestCase):
