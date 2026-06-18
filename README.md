@@ -40,6 +40,9 @@ python run_benchmark.py run
 # Live run against the Copilot CLI models (uses your existing `copilot` login):
 python run_benchmark.py run --live
 
+# Faster: run many calls in parallel (probed safe to ~20 concurrent on the CLI):
+python run_benchmark.py run --live --concurrency 16 --throttle 0
+
 # Live run against GitHub Models instead (needs a PAT with the 'models: read' scope):
 python run_benchmark.py run --live --provider github --token ghp_xxxxxxxx
 
@@ -49,7 +52,18 @@ python run_benchmark.py verify-models --provider github --token ghp_xxxxxxxx
 ```
 
 Useful flags: `--limit N` (cap prompts), `--models claude,openai-low` (filter by
-id/tier), `--judge <model-id>` (matchup judge), `--out DIR`, `--verbose`.
+id/tier), `--judge <model-id>` (matchup judge), `--concurrency N` (parallel
+calls), `--out DIR`, `--verbose`.
+
+### Concurrency
+
+By default the harness runs sequentially. `--concurrency N` dispatches up to `N`
+calls at once — both the phase-1 answer calls (every model × prompt is
+independent) and the phase-2 per-prompt subjective rankings. The Copilot CLI was
+probed safe to ~20 simultaneous calls, so a full run drops from ~15 min to a few
+minutes; the more prompts you add, the better phase 2 parallelises (one in-flight
+ranking per prompt). Pair it with `--throttle 0` to remove spawn spacing. Ranking
+stays deterministic — each prompt is judged with its own prompt-seeded RNG.
 
 ### Throwaway sessions (resume-list hygiene)
 

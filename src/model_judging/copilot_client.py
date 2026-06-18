@@ -32,6 +32,7 @@ import os
 import random
 import subprocess
 import sys
+import threading
 import time
 
 from .client import CompletionResult
@@ -155,17 +156,33 @@ class CopilotCliClient:
         self.extra_args = list(extra_args or [])
         self._last_spawn_at = 0.0
         self._rng = random.Random()
+        # The same client instance is shared across worker threads when the
+        # benchmark runs with concurrency > 1, so spawn spacing and the backoff
+        # RNG must be guarded.
+        self._spawn_lock = threading.Lock()
 
     def _throttle(self) -> None:
+        """Block until at least ``min_interval`` has elapsed since the last spawn.
+
+        Holds ``_spawn_lock`` only long enough to claim the next spawn slot, so
+        worker threads start staggered by ``min_interval`` yet their subprocesses
+        still run concurrently.
+        """
         if self.min_interval <= 0:
+            with self._spawn_lock:
+                self._last_spawn_at = time.monotonic()
             return
-        wait = self.min_interval - (time.monotonic() - self._last_spawn_at)
-        if wait > 0:
-            time.sleep(wait)
+        with self._spawn_lock:
+            wait = self.min_interval - (time.monotonic() - self._last_spawn_at)
+            if wait > 0:
+                time.sleep(wait)
+            self._last_spawn_at = time.monotonic()
 
     def _backoff_seconds(self, attempt: int) -> float:
         base = min(self.backoff_cap, self.backoff_base * (2 ** attempt))
-        return base + self._rng.uniform(0, base * 0.25)
+        with self._spawn_lock:
+            jitter = self._rng.uniform(0, base * 0.25)
+        return base + jitter
 
     def _build_args(self, model: ModelSpec, prompt: str) -> list[str]:
         args = [
@@ -242,7 +259,6 @@ class CopilotCliClient:
                 f"installed and on PATH? Original error: {exc}"
             ) from exc
         except subprocess.TimeoutExpired:
-            self._last_spawn_at = time.monotonic()
             latency_ms = (time.perf_counter() - started) * 1000.0
             return CompletionResult(
                 model_id=model.id,
@@ -254,7 +270,6 @@ class CopilotCliClient:
                 error=f"timeout after {self.timeout:.0f}s",
             )
 
-        self._last_spawn_at = time.monotonic()
         wall_ms = (time.perf_counter() - started) * 1000.0
         return self._parse(model, proc.stdout, proc.stderr, proc.returncode, wall_ms)
 

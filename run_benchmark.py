@@ -68,7 +68,8 @@ def cmd_run(args: argparse.Namespace) -> int:
             )
             print(
                 f"LIVE run: {len(models)} models x {len(prompts)} prompts via Copilot CLI "
-                f"(throttle={args.throttle:g}s, max_retries={args.max_retries})"
+                f"(throttle={args.throttle:g}s, max_retries={args.max_retries}, "
+                f"concurrency={args.concurrency})"
             )
     else:
         client = MockModelClient()
@@ -88,7 +89,8 @@ def cmd_run(args: argparse.Namespace) -> int:
 
     result = run_benchmark(
         prompts, models, client, judge_models=judge_models,
-        matchup_rounds=args.matchup_rounds, progress=progress
+        matchup_rounds=args.matchup_rounds, concurrency=args.concurrency,
+        progress=progress,
     )
 
     out_dir = Path(args.out)
@@ -182,9 +184,14 @@ def main(argv: list[str] | None = None) -> int:
                      help="Swiss rounds for subjective ranking (default: auto=ceil(log2 n); "
                           "0 = exhaustive round-robin)")
     run.add_argument("--throttle", type=float, default=1.0,
-                     help="Min seconds between Copilot CLI calls to avoid 429 (default: 1.0)")
+                     help="Min seconds between Copilot CLI call starts (default: 1.0; "
+                          "set 0 to rely purely on --concurrency)")
     run.add_argument("--max-retries", type=int, default=6,
                      help="Retries with exponential backoff on a 429 (default: 6)")
+    run.add_argument("--concurrency", type=int, default=1,
+                     help="Parallel in-flight calls: answers (phase 1) and per-prompt "
+                          "rankings (phase 2). Probed safe to ~20 on the Copilot CLI "
+                          "(default: 1 = sequential)")
     run.add_argument("--out", default="results", help="Output directory (default: results)")
     run.add_argument("--verbose", action="store_true", help="Print per-call progress")
     run.set_defaults(func=cmd_run)

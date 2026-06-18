@@ -286,6 +286,38 @@ class EndToEndTests(unittest.TestCase):
                  and c.prompt_id == prompts[0].id}
         self.assertLess(ranks["claude-opus-4.8"], ranks["claude-haiku-4.5"])
 
+    def test_concurrent_run_matches_sequential_structure(self):
+        prompts = load_prompts()
+        models = default_models()
+        seq = run_benchmark(prompts, models, MockModelClient(), rng=random.Random(0))
+        par = run_benchmark(prompts, models, MockModelClient(), concurrency=8)
+
+        # Same cells, same order, no errors.
+        self.assertEqual(len(par.cells), len(seq.cells))
+        self.assertTrue(all(c.error is None for c in par.cells))
+        self.assertEqual(
+            [(c.prompt_id, c.model_id) for c in par.cells],
+            [(c.prompt_id, c.model_id) for c in seq.cells],
+        )
+        # Hard-truth grading is deterministic, so it must match exactly.
+        seq_ht = {(c.prompt_id, c.model_id): c.correct
+                  for c in seq.cells if c.kind == "hard_truth"}
+        par_ht = {(c.prompt_id, c.model_id): c.correct
+                  for c in par.cells if c.kind == "hard_truth"}
+        self.assertEqual(seq_ht, par_ht)
+        # Every subjective cell is still ranked.
+        self.assertTrue(all(c.rank is not None
+                            for c in par.cells if c.kind == "subjective"))
+
+    def test_concurrent_ranking_is_deterministic(self):
+        prompts = load_prompts()
+        models = default_models()
+        a = run_benchmark(prompts, models, MockModelClient(), concurrency=8)
+        b = run_benchmark(prompts, models, MockModelClient(), concurrency=8)
+        ranks_a = {(c.prompt_id, c.model_id): c.rank for c in a.cells}
+        ranks_b = {(c.prompt_id, c.model_id): c.rank for c in b.cells}
+        self.assertEqual(ranks_a, ranks_b)
+
 
 if __name__ == "__main__":
     unittest.main()

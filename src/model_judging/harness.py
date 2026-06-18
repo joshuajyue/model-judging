@@ -9,8 +9,11 @@ GitHub Models surface, the latency and cost numbers are meaningful as a
 
 from __future__ import annotations
 
+import hashlib
 import random
 import statistics
+import threading
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from typing import Callable
 
@@ -91,6 +94,39 @@ class LatencyStats:
         )
 
 
+def _stable_seed(prompt_id: str, base: int = 0) -> int:
+    """Deterministic per-prompt RNG seed (independent of Python's hash salt)."""
+    digest = hashlib.sha256(prompt_id.encode("utf-8")).hexdigest()[:8]
+    return base ^ int(digest, 16)
+
+
+def _build_cell(prompt: Prompt, model: ModelSpec, completion: CompletionResult) -> CellResult:
+    return CellResult(
+        prompt_id=prompt.id,
+        category=prompt.category,
+        kind=prompt.kind,
+        model_id=model.id,
+        model_name=model.name,
+        tier=model.tier,
+        latency_ms=completion.latency_ms,
+        input_tokens=completion.input_tokens,
+        output_tokens=completion.output_tokens,
+        cost_usd=completion.cost_usd,
+        error=completion.error,
+        answer=completion.text,
+    )
+
+
+def _apply_hard_truth(cell: CellResult, prompt: Prompt, completion: CompletionResult) -> None:
+    if completion.ok:
+        graded = grade_hard_truth(prompt, completion.text)
+        cell.correct = graded.correct
+        cell.detail = graded.detail
+    else:
+        cell.correct = False
+        cell.detail = completion.error or "no response"
+
+
 def run_benchmark(
     prompts: list[Prompt],
     models: list[ModelSpec],
@@ -100,64 +136,93 @@ def run_benchmark(
     judges: list[PairwiseTextJudge] | None = None,
     rng: random.Random | None = None,
     matchup_rounds: int | None = None,
+    concurrency: int = 1,
     progress: ProgressFn | None = None,
 ) -> BenchmarkResult:
+    """Run the benchmark.
+
+    With ``concurrency > 1`` the independent answer calls (phase 1) and the
+    per-prompt subjective rankings (phase 2) are dispatched across a thread pool.
+    The Copilot CLI tolerates this comfortably (probed safe to ~20 concurrent),
+    and each call is its own process, so threads are an appropriate fit. The
+    shared client serialises only its short spawn-spacing critical section.
+
+    To stay reproducible under parallelism, each subjective prompt is ranked with
+    its own RNG seeded from the prompt id rather than the single shared ``rng``.
+    """
     rng = rng or random.Random(0)
-    log = progress or (lambda _msg: None)
+    raw_log = progress or (lambda _msg: None)
+    log_lock = threading.Lock()
+
+    def log(msg: str) -> None:
+        with log_lock:
+            raw_log(msg)
 
     if judges is None:
         panel = judge_models if judge_models is not None else models[:1]
         judges = [ModelMatchupJudge(client, jm) for jm in panel]
 
     result = BenchmarkResult()
-
-    # Phase 1: collect every model's answer to every prompt.
-    answers: dict[str, dict[str, str]] = {}  # prompt_id -> {model_id -> text}
+    answers: dict[str, dict[str, str]] = {p.id: {} for p in prompts}
     cell_index: dict[tuple[str, str], CellResult] = {}
+    concurrency = max(1, concurrency)
 
-    for prompt in prompts:
-        answers[prompt.id] = {}
-        for model in models:
-            log(f"calling {model.name} on {prompt.id}")
-            completion: CompletionResult = client.complete(model, prompt.rendered_prompt())
-            cell = CellResult(
-                prompt_id=prompt.id,
-                category=prompt.category,
-                kind=prompt.kind,
-                model_id=model.id,
-                model_name=model.name,
-                tier=model.tier,
-                latency_ms=completion.latency_ms,
-                input_tokens=completion.input_tokens,
-                output_tokens=completion.output_tokens,
-                cost_usd=completion.cost_usd,
-                error=completion.error,
-                answer=completion.text,
-            )
-            result.cells.append(cell)
-            cell_index[(prompt.id, model.id)] = cell
+    # ----------------------------------------------------------------- #
+    # Phase 1: collect every model's answer to every prompt.
+    # ----------------------------------------------------------------- #
+    tasks = [(prompt, model) for prompt in prompts for model in models]
 
-            if prompt.is_hard_truth and completion.ok:
-                graded = grade_hard_truth(prompt, completion.text)
-                cell.correct = graded.correct
-                cell.detail = graded.detail
-            elif prompt.is_hard_truth:
-                cell.correct = False
-                cell.detail = completion.error or "no response"
-            elif completion.ok and completion.text:
-                answers[prompt.id][model.id] = completion.text
+    def answer_task(prompt: Prompt, model: ModelSpec) -> CompletionResult:
+        log(f"calling {model.name} on {prompt.id}")
+        return client.complete(model, prompt.rendered_prompt())
 
+    if concurrency > 1:
+        with ThreadPoolExecutor(max_workers=concurrency) as pool:
+            completions = list(pool.map(lambda t: answer_task(*t), tasks))
+    else:
+        completions = [answer_task(prompt, model) for prompt, model in tasks]
+
+    # Assemble cells in deterministic task order regardless of completion order.
+    for (prompt, model), completion in zip(tasks, completions):
+        cell = _build_cell(prompt, model, completion)
+        result.cells.append(cell)
+        cell_index[(prompt.id, model.id)] = cell
+        if prompt.is_hard_truth:
+            _apply_hard_truth(cell, prompt, completion)
+        elif completion.ok and completion.text:
+            answers[prompt.id][model.id] = completion.text
+
+    # ----------------------------------------------------------------- #
     # Phase 2: rank subjective answers via pairwise matchups.
+    # ----------------------------------------------------------------- #
+    rankable = [
+        p for p in prompts if p.is_subjective and len(answers[p.id]) >= 2
+    ]
+    # Single-answer subjective prompts trivially rank 1.
     for prompt in prompts:
-        if not prompt.is_subjective:
-            continue
-        pool = answers[prompt.id]
-        if len(pool) < 2:
-            for model_id in pool:
-                cell_index[(prompt.id, model_id)].rank = 1.0
-            continue
-        log(f"ranking {len(pool)} answers for {prompt.id}")
-        ranks = rank_answers(prompt, pool, judges, rng=rng, rounds=matchup_rounds)
+        if prompt.is_subjective and len(answers[prompt.id]) == 1:
+            only_id = next(iter(answers[prompt.id]))
+            cell_index[(prompt.id, only_id)].rank = 1.0
+
+    def rank_task(prompt: Prompt) -> tuple[str, dict[str, float]]:
+        log(f"ranking {len(answers[prompt.id])} answers for {prompt.id}")
+        prompt_rng = (
+            rng if concurrency == 1 else random.Random(_stable_seed(prompt.id))
+        )
+        ranks = rank_answers(
+            prompt, answers[prompt.id], judges, rng=prompt_rng, rounds=matchup_rounds
+        )
+        return prompt.id, ranks
+
+    if concurrency > 1 and rankable:
+        with ThreadPoolExecutor(max_workers=concurrency) as pool:
+            ranked = list(pool.map(rank_task, rankable))
+    else:
+        ranked = [rank_task(p) for p in rankable]
+
+    ranks_by_prompt = dict(ranked)
+    for prompt in rankable:
+        ranks = ranks_by_prompt[prompt.id]
         worst = max(ranks.values()) + 1 if ranks else 1.0
         for model in models:
             cell = cell_index[(prompt.id, model.id)]
