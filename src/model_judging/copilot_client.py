@@ -67,6 +67,22 @@ class CopilotCliError(RuntimeError):
     """Raised when the ``copilot`` executable cannot be launched at all."""
 
 
+def _resolve_copilot_home(copilot_home: str | None) -> str | None:
+    """Pick the isolated ``COPILOT_HOME`` for benchmark spawns.
+
+    ``None`` -> ``$COPILOT_BENCH_HOME`` or ``<temp>/model-judging-copilot-home``.
+    ``""``   -> opt out (return ``None`` so the real ``~/.copilot`` is used).
+    """
+    if copilot_home == "":
+        return None
+    if copilot_home is None:
+        copilot_home = os.environ.get("COPILOT_BENCH_HOME") or os.path.join(
+            os.environ.get("TEMP") or os.getcwd(), "model-judging-copilot-home"
+        )
+    os.makedirs(copilot_home, exist_ok=True)
+    return copilot_home
+
+
 class CopilotCliClient:
     """Drives completions through ``copilot -p`` (implements the ``ModelClient`` Protocol).
 
@@ -100,6 +116,15 @@ class CopilotCliClient:
     backoff_base / backoff_cap:
         Exponential backoff is ``min(backoff_cap, backoff_base * 2**attempt)``
         seconds plus jitter, per retry.
+    copilot_home:
+        Value for the ``COPILOT_HOME`` env var of every spawned process. The CLI
+        persists one session per ``copilot -p`` call under this directory, so a
+        full run would otherwise dump ~130 throwaway sessions into the user's
+        real ``~/.copilot`` resume list. Pointing the benchmark at an isolated
+        home keeps those sessions out of the way (auth still works -- credentials
+        live in the OS keychain/credential manager, not in ``.copilot``). Pass
+        ``""`` to opt out and use the real home. Defaults to ``$COPILOT_BENCH_HOME``
+        or ``<temp>/model-judging-copilot-home``.
     extra_args:
         Additional raw CLI arguments appended to every invocation.
     """
@@ -115,6 +140,7 @@ class CopilotCliClient:
         max_retries: int = 6,
         backoff_base: float = 10.0,
         backoff_cap: float = 120.0,
+        copilot_home: str | None = None,
         extra_args: list[str] | None = None,
     ) -> None:
         self.copilot_bin = copilot_bin
@@ -125,6 +151,7 @@ class CopilotCliClient:
         self.max_retries = max(0, max_retries)
         self.backoff_base = backoff_base
         self.backoff_cap = backoff_cap
+        self.copilot_home = _resolve_copilot_home(copilot_home)
         self.extra_args = list(extra_args or [])
         self._last_spawn_at = 0.0
         self._rng = random.Random()
@@ -191,6 +218,10 @@ class CopilotCliClient:
 
         env = dict(os.environ)
         env.setdefault("COPILOT_DISABLE_UPDATE", "1")
+        if self.copilot_home:
+            # Isolate benchmark sessions so they never pollute the user's real
+            # ~/.copilot resume list. Auth still works via the OS credential store.
+            env["COPILOT_HOME"] = self.copilot_home
 
         self._throttle()
         started = time.perf_counter()

@@ -51,6 +51,29 @@ python run_benchmark.py verify-models --provider github --token ghp_xxxxxxxx
 Useful flags: `--limit N` (cap prompts), `--models claude,openai-low` (filter by
 id/tier), `--judge <model-id>` (matchup judge), `--out DIR`, `--verbose`.
 
+### Throwaway sessions (resume-list hygiene)
+
+Every `copilot -p` call persists a session, so a full run would otherwise dump
+~130 throwaway chats into your `copilot --resume` list. The Copilot CLI client
+avoids this by running each call under an **isolated `COPILOT_HOME`**
+(`<temp>/model-judging-copilot-home`, override with `$COPILOT_BENCH_HOME`) — auth
+still works because credentials live in the OS keychain, not in `.copilot`. So
+new runs never touch your real resume list.
+
+To clear sessions that earlier runs left in your real `~/.copilot`, or to drop
+the isolated home:
+
+```bash
+# Preview which sessions would be removed (matched by the cwd the harness uses):
+python run_benchmark.py clean-sessions --dry-run
+
+# Delete them (backs up session-store.db first):
+python run_benchmark.py clean-sessions
+
+# Or just wipe the isolated benchmark home wholesale:
+python run_benchmark.py clean-sessions --purge-isolated
+```
+
 ### Auth
 
 - **Copilot CLI provider (default):** just run `copilot` once and sign in
@@ -120,6 +143,7 @@ decision = pipeline.judge(TaskKind.SUBJECTIVE, candidates)
 - `registry.py` — Benchmarked models (Copilot CLI ids), tiers, and prices
 - `client.py` — GitHub Models inference client (answers prompts; captures latency/tokens/cost)
 - `copilot_client.py` — Copilot CLI client (default; shells out to `copilot -p`, captures latency/tokens/premium-requests)
+- `sessions.py` — Cleanup helpers for the throwaway sessions `copilot -p` persists
 - `dataset.py` — Prompt dataset loader and answer-format directives
 - `assess.py` — Hard-truth grading and subjective matchup ranking
 - `harness.py` — Benchmark orchestrator

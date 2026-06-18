@@ -24,18 +24,20 @@ Verify the registry model IDs are accepted before a paid run:
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent / "src"))
 
 from model_judging.client import GitHubModelsClient, fetch_catalog
-from model_judging.copilot_client import CopilotCliClient, verify_model
+from model_judging.copilot_client import CopilotCliClient, _resolve_copilot_home, verify_model
 from model_judging.dataset import load_prompts
 from model_judging.harness import run_benchmark
 from model_judging.mock import MockModelClient
 from model_judging.registry import default_models, models_by_id
 from model_judging.report import write_detailed_csv, write_summary_csv
+from model_judging.sessions import clean_sessions, default_real_home, purge_home
 
 
 def _select_models(filter_expr: str | None):
@@ -131,6 +133,35 @@ def cmd_verify_models(args: argparse.Namespace) -> int:
     return 1 if missing else 0
 
 
+def cmd_clean_sessions(args: argparse.Namespace) -> int:
+    # Wholesale-purge the isolated benchmark home (new runs land here).
+    if args.purge_isolated:
+        home = _resolve_copilot_home(None)
+        removed = purge_home(home) if home else False
+        print(f"{'Removed' if removed else 'Nothing to remove at'} isolated home: {home}")
+        return 0
+
+    # Surgically prune benchmark sessions from a shared store (e.g. legacy runs
+    # that predate isolation, which landed in the real ~/.copilot).
+    home_dir = args.home or default_real_home()
+    cwd_match = args.cwd or (os.environ.get("TEMP") or os.getcwd())
+    result = clean_sessions(
+        home_dir=home_dir,
+        cwd_match=cwd_match,
+        dry_run=args.dry_run,
+        backup=not args.no_backup,
+    )
+    print(f"Store: {os.path.join(home_dir, 'session-store.db')}")
+    print(f"Match (cwd == {cwd_match}): {result.matched} sessions")
+    if args.dry_run:
+        print("Dry run -- nothing deleted. Re-run without --dry-run to apply.")
+        return 0
+    if result.backup_path:
+        print(f"Backup: {result.backup_path}")
+    print(f"Deleted {result.deleted} sessions and {result.folders_removed} state folders.")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="GitHub Models benchmark harness")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -167,6 +198,26 @@ def main(argv: list[str] | None = None) -> int:
     )
     verify.add_argument("--token", default=None, help="GitHub PAT for --provider github (else $GITHUB_TOKEN)")
     verify.set_defaults(func=cmd_verify_models)
+
+    clean = sub.add_parser(
+        "clean-sessions",
+        help="Remove the throwaway Copilot sessions benchmark runs leave behind",
+    )
+    clean.add_argument(
+        "--purge-isolated", action="store_true",
+        help="Delete the whole isolated benchmark home (where new runs persist sessions)",
+    )
+    clean.add_argument(
+        "--home", default=None,
+        help="Copilot home holding session-store.db to clean (default: real ~/.copilot)",
+    )
+    clean.add_argument(
+        "--cwd", default=None,
+        help="Only delete sessions created from this cwd (default: system temp dir)",
+    )
+    clean.add_argument("--dry-run", action="store_true", help="Show matches without deleting")
+    clean.add_argument("--no-backup", action="store_true", help="Skip the pre-delete DB backup")
+    clean.set_defaults(func=cmd_clean_sessions)
 
     args = parser.parse_args(argv)
     return args.func(args)
