@@ -71,6 +71,16 @@ def cmd_run(args: argparse.Namespace) -> int:
                 f"(throttle={args.throttle:g}s, max_retries={args.max_retries}, "
                 f"concurrency={args.concurrency})"
             )
+            if args.provider != "github" and args.concurrency > 1:
+                print(
+                    "  NOTE: each call is a separate ~180 MB copilot process. High "
+                    "concurrency saturates CPU (can freeze the desktop) AND inflates the "
+                    "reported per-call latency through contention.\n"
+                    "        -> For trustworthy latency numbers run with --concurrency 1.\n"
+                    "        -> To go fast without freezing, keep --concurrency modest "
+                    "(~4-6) and a small --throttle (e.g. 1) to stagger spawns.",
+                    file=sys.stderr,
+                )
     else:
         client = MockModelClient()
         print(f"DRY-RUN (offline mock): {len(models)} models x {len(prompts)} prompts")

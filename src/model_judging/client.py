@@ -29,10 +29,11 @@ class CompletionResult:
     model_id: str
     text: str
     latency_ms: float
-    input_tokens: int
+    input_tokens: int | None
     output_tokens: int
     cost_usd: float
     error: str | None = None
+    premium_requests: float = 0.0
     raw: dict = field(default_factory=dict)
 
     @property

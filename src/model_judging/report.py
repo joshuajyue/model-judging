@@ -31,7 +31,8 @@ def write_detailed_csv(result: BenchmarkResult, path: str | Path) -> Path:
     path.parent.mkdir(parents=True, exist_ok=True)
     fields = [
         "model_name", "tier", "category", "prompt_id", "kind", "score",
-        "latency_ms", "input_tokens", "output_tokens", "cost_usd", "note",
+        "latency_ms", "input_tokens", "output_tokens",
+        "premium_requests", "est_cost_usd", "note",
     ]
     with path.open("w", newline="", encoding="utf-8") as fh:
         writer = csv.DictWriter(fh, fieldnames=fields)
@@ -46,9 +47,11 @@ def write_detailed_csv(result: BenchmarkResult, path: str | Path) -> Path:
                     "kind": cell.kind,
                     "score": _score_cell(cell),
                     "latency_ms": round(cell.latency_ms, 1),
-                    "input_tokens": cell.input_tokens,
+                    # The Copilot CLI does not expose prompt tokens -> blank, not 0.
+                    "input_tokens": "" if cell.input_tokens is None else cell.input_tokens,
                     "output_tokens": cell.output_tokens,
-                    "cost_usd": round(cell.cost_usd, 6),
+                    "premium_requests": round(cell.premium_requests, 4),
+                    "est_cost_usd": round(cell.cost_usd, 6),
                     "note": cell.error or cell.detail,
                 }
             )
@@ -65,15 +68,19 @@ def write_summary_csv(result: BenchmarkResult, path: str | Path) -> Path:
         meta[cell.model_id] = (cell.model_name, cell.tier)
 
     fields = [
-        "model_name", "tier", "category", "kind", "metric", "value", "n",
-        "latency_avg_ms", "latency_p50_ms", "latency_p95_ms", "avg_cost_usd",
+        "model_name", "tier", "category", "kind", "metric", "value", "n", "n_ok",
+        "latency_avg_ms", "latency_p50_ms", "latency_p95_ms",
+        "avg_premium_requests", "avg_est_cost_usd",
     ]
     rows = []
     for (model_id, category), cells in groups.items():
         model_name, tier = meta[model_id]
         kind = cells[0].kind
-        latency = LatencyStats.of([c.latency_ms for c in cells if c.error is None])
-        costs = [c.cost_usd for c in cells if c.error is None]
+        ok_cells = [c for c in cells if c.error is None]
+        latency = LatencyStats.of([c.latency_ms for c in ok_cells])
+        premiums = [c.premium_requests for c in ok_cells]
+        costs = [c.cost_usd for c in ok_cells]
+        avg_premium = statistics.fmean(premiums) if premiums else 0.0
         avg_cost = statistics.fmean(costs) if costs else 0.0
 
         if kind == "hard_truth":
@@ -97,10 +104,12 @@ def write_summary_csv(result: BenchmarkResult, path: str | Path) -> Path:
                 "metric": metric,
                 "value": round(value, 4),
                 "n": len(cells),
+                "n_ok": len(ok_cells),
                 "latency_avg_ms": round(latency.avg, 1),
                 "latency_p50_ms": round(latency.p50, 1),
                 "latency_p95_ms": round(latency.p95, 1),
-                "avg_cost_usd": round(avg_cost, 6),
+                "avg_premium_requests": round(avg_premium, 4),
+                "avg_est_cost_usd": round(avg_cost, 6),
             }
         )
 

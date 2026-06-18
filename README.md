@@ -40,8 +40,9 @@ python run_benchmark.py run
 # Live run against the Copilot CLI models (uses your existing `copilot` login):
 python run_benchmark.py run --live
 
-# Faster: run many calls in parallel (probed safe to ~20 concurrent on the CLI):
-python run_benchmark.py run --live --concurrency 16 --throttle 0
+# Faster: run several calls in parallel. Keep it modest + stagger spawns so the
+# desktop doesn't freeze and latency stays meaningful (see "Concurrency" below):
+python run_benchmark.py run --live --concurrency 6 --throttle 1
 
 # Live run against GitHub Models instead (needs a PAT with the 'models: read' scope):
 python run_benchmark.py run --live --provider github --token ghp_xxxxxxxx
@@ -55,15 +56,36 @@ Useful flags: `--limit N` (cap prompts), `--models claude,openai-low` (filter by
 id/tier), `--judge <model-id>` (matchup judge), `--concurrency N` (parallel
 calls), `--out DIR`, `--verbose`.
 
-### Concurrency
+### Concurrency (and its effect on latency)
 
 By default the harness runs sequentially. `--concurrency N` dispatches up to `N`
 calls at once — both the phase-1 answer calls (every model × prompt is
-independent) and the phase-2 per-prompt subjective rankings. The Copilot CLI was
-probed safe to ~20 simultaneous calls, so a full run drops from ~15 min to a few
-minutes; the more prompts you add, the better phase 2 parallelises (one in-flight
-ranking per prompt). Pair it with `--throttle 0` to remove spawn spacing. Ranking
-stays deterministic — each prompt is judged with its own prompt-seeded RNG.
+independent) and the phase-2 per-prompt subjective rankings. A full run drops
+from ~15 min to a few minutes, and the more prompts you add, the better phase 2
+parallelises (one in-flight ranking per prompt). Ranking stays deterministic —
+each prompt is judged with its own prompt-seeded RNG.
+
+**Caveat — each call is a separate ~180 MB `copilot` process.** Running many cold
+starts at once saturates CPU, which can momentarily **freeze the desktop** *and*
+**inflate the reported per-call latency** through contention (the latency comes
+from the CLI's own `totalApiDurationMs`, which is clean of process-spawn lag but
+not of CPU starvation). Guidance:
+
+- For **trustworthy latency** numbers, run with `--concurrency 1`.
+- To go **fast** without freezing, keep `--concurrency` modest (~4–6) and a small
+  `--throttle` (e.g. `1`) so spawns are staggered instead of a thundering herd.
+- `--concurrency 16 --throttle 0` is fastest but will spike CPU and skew latency.
+
+### Cost and tokens
+
+The Copilot CLI doesn't bill per token, so the report uses the CLI's own metrics:
+
+- `premium_requests` — the multiplier-adjusted Copilot billing unit the CLI
+  reports per call (the relative cost metric).
+- `est_cost_usd` — a marginal USD estimate, `premium_requests × $0.04` (the
+  premium-request overage rate; override via `$COPILOT_PREMIUM_REQUEST_USD`).
+- `input_tokens` — **blank**: the CLI does not expose prompt tokens. `output_tokens`
+  (including reasoning) *is* reported.
 
 ### Throwaway sessions (resume-list hygiene)
 
@@ -93,8 +115,8 @@ python run_benchmark.py clean-sessions --purge-isolated
 - **Copilot CLI provider (default):** just run `copilot` once and sign in
   (`/login`). The harness shells out to the installed `copilot` executable; set
   `COPILOT_BIN` if it is not on `PATH`. Latency comes from the CLI's reported
-  `totalApiDurationMs` and the cost column is the Copilot `premiumRequests`
-  billed per call (the relative cost metric).
+  `totalApiDurationMs`; cost is reported as `premium_requests` plus an
+  `est_cost_usd` estimate (see Cost and tokens above).
 - **GitHub Models provider:** pass `--token ghp_...` or set `GITHUB_TOKEN`. The
   token needs the **`models: read`** scope (<https://github.com/settings/tokens>).
 
@@ -102,10 +124,11 @@ python run_benchmark.py clean-sessions --purge-isolated
 
 - `detailed.csv` — one row per (model, prompt): `correct`/`incorrect` for
   hard-truth prompts or the per-prompt `rank` for subjective prompts, plus
-  latency, tokens, and cost.
+  `latency_ms`, `output_tokens`, `premium_requests`, and `est_cost_usd`
+  (`input_tokens` is blank for the Copilot provider).
 - `summary.csv` — one row per (model, category): `pass_rate` or `avg_rank` with
-  latency avg/p50/p95 and average cost. This is the table that feeds routing
-  weights.
+  `n_ok` (non-errored calls), latency avg/p50/p95, and avg premium-requests/USD.
+  This is the table that feeds routing weights.
 
 ### Editing the model set and prices
 

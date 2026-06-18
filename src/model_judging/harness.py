@@ -41,9 +41,10 @@ class CellResult:
     model_name: str
     tier: str
     latency_ms: float
-    input_tokens: int
+    input_tokens: int | None
     output_tokens: int
     cost_usd: float
+    premium_requests: float = 0.0
     error: str | None = None
     # Hard-truth outcome:
     correct: bool | None = None
@@ -112,6 +113,7 @@ def _build_cell(prompt: Prompt, model: ModelSpec, completion: CompletionResult) 
         input_tokens=completion.input_tokens,
         output_tokens=completion.output_tokens,
         cost_usd=completion.cost_usd,
+        premium_requests=completion.premium_requests,
         error=completion.error,
         answer=completion.text,
     )

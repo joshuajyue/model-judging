@@ -40,6 +40,12 @@ from .registry import ModelSpec
 
 COPILOT_BIN = os.environ.get("COPILOT_BIN", "copilot")
 
+# GitHub Copilot bills premium-request *overage* at a documented USD rate. The
+# CLI reports a multiplier-adjusted `premiumRequests` count per call, so a rough
+# marginal USD cost is that count times this rate. Override with
+# $COPILOT_PREMIUM_REQUEST_USD if the published rate changes.
+PREMIUM_REQUEST_USD = float(os.environ.get("COPILOT_PREMIUM_REQUEST_USD", "0.04"))
+
 # Substrings that mark a GitHub/Copilot rate-limit response. The CLI surfaces the
 # raw 429 body, which includes GitHub's "Too many requests"/ToS scraping notice;
 # Gemini-style backends report "RESOURCE_EXHAUSTED".
@@ -330,9 +336,10 @@ class CopilotCliClient:
             model_id=model.id,
             text=text.strip(),
             latency_ms=latency_ms,
-            input_tokens=0,  # not exposed by the CLI
+            input_tokens=None,  # the CLI does not expose prompt/input tokens
             output_tokens=output_tokens,
-            cost_usd=premium_requests,  # Copilot premium-request units (relative cost)
+            cost_usd=premium_requests * PREMIUM_REQUEST_USD,  # marginal USD estimate
+            premium_requests=premium_requests,  # the Copilot billing unit, as reported
             error=error,
             raw={"premium_requests": premium_requests, "returncode": returncode},
         )
@@ -347,5 +354,5 @@ def verify_model(model: ModelSpec, *, client: CopilotCliClient | None = None) ->
     client = client or CopilotCliClient(timeout=120.0)
     result = client.complete(model, "Reply with exactly: ok")
     if result.ok and result.text:
-        return True, f"api={result.latency_ms:.0f}ms premium={result.cost_usd:g}"
+        return True, f"api={result.latency_ms:.0f}ms premium={result.premium_requests:g}"
     return False, result.error or "no response"

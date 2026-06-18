@@ -65,7 +65,9 @@ class CopilotCliParseTests(unittest.TestCase):
         self.assertEqual(r.text, "43")
         self.assertEqual(r.output_tokens, 76)
         self.assertEqual(r.latency_ms, 3826.0)   # uses totalApiDurationMs, not wall_ms
-        self.assertEqual(r.cost_usd, 2.5)         # premiumRequests as relative cost
+        self.assertEqual(r.premium_requests, 2.5)  # Copilot billing unit, as reported
+        self.assertAlmostEqual(r.cost_usd, 2.5 * 0.04)  # marginal USD estimate
+        self.assertIsNone(r.input_tokens)        # CLI does not expose prompt tokens
 
     def test_keeps_last_nonempty_message_and_sums_tokens(self):
         stdout = "\n".join([
@@ -251,6 +253,41 @@ class PercentileTests(unittest.TestCase):
 
     def test_empty(self):
         self.assertEqual(_percentile([], 95), 0.0)
+
+
+class ReportColumnTests(unittest.TestCase):
+    def _cell(self, **kw):
+        from model_judging.harness import CellResult
+        base = dict(prompt_id="p", category="email", kind="subjective",
+                    model_id="m", model_name="M", tier="t", latency_ms=100.0,
+                    input_tokens=None, output_tokens=5, cost_usd=0.1,
+                    premium_requests=2.5, rank=1.0)
+        base.update(kw)
+        return CellResult(**base)
+
+    def test_detailed_blank_input_tokens_and_premium(self):
+        from model_judging.harness import BenchmarkResult
+        result = BenchmarkResult(cells=[self._cell()])
+        with tempfile.TemporaryDirectory() as tmp:
+            path = write_detailed_csv(result, Path(tmp) / "d.csv")
+            with path.open(encoding="utf-8") as fh:
+                row = next(csv.DictReader(fh))
+        self.assertIn("premium_requests", row)
+        self.assertIn("est_cost_usd", row)
+        self.assertEqual(row["input_tokens"], "")        # N/A, not 0
+        self.assertEqual(row["premium_requests"], "2.5")
+        self.assertEqual(row["est_cost_usd"], "0.1")
+
+    def test_summary_has_premium_and_cost_columns(self):
+        from model_judging.harness import BenchmarkResult
+        result = BenchmarkResult(cells=[self._cell()])
+        with tempfile.TemporaryDirectory() as tmp:
+            path = write_summary_csv(result, Path(tmp) / "s.csv")
+            with path.open(encoding="utf-8") as fh:
+                row = next(csv.DictReader(fh))
+        self.assertIn("avg_premium_requests", row)
+        self.assertIn("avg_est_cost_usd", row)
+        self.assertIn("n_ok", row)
 
 
 class EndToEndTests(unittest.TestCase):
